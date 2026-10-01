@@ -337,3 +337,172 @@ Các mục dưới đây đổi mô hình hoặc quy tắc nên cần đồng ý
 - [ ] **MR-S2** Mô hình chuỗi (GRU) hoặc đồ thị — chỉ làm nếu MR6 cho thấy còn dư địa
 - [ ] **MR-S3** Trợ lý điều tra dùng LLM tóm tắt chiến dịch từ bằng chứng có cấu trúc (cần API key, có chế độ tắt, không thay giải thích tất định)
 - [ ] **MR-S4** Clustering tìm "mẫu lạ mới" tự động
+
+# Giai đoạn hoàn thiện — hợp nhất kiến trúc, độ tin cậy, chuẩn bị bảo vệ (MR20–MR39)
+
+> **Kế hoạch đã được chủ dự án duyệt ngày 01/10/2026.** Bối cảnh: còn khoảng 6 tuần tới bảo vệ (≈ 12/11/2026), đề cương chưa nộp,
+> mục tiêu "hoàn chỉnh, ít bị bắt bẻ, điểm cao", **được phép phá kiến trúc cũ** (khác MR1–MR19: xây mới song song, không
+> đụng cái cũ).
+
+**Nguyên tắc**
+- Việc rủi ro (đụng lõi) làm trước, tuần 1–2. Đóng băng code cuối tuần 5. Tuần 6 chỉ báo cáo, slide, luyện bảo vệ.
+- Mọi con số trình bày phải có phép đo kèm báo nhầm. Không nâng số phát hiện bằng cách hạ ngưỡng hay nâng trọng số bằng tay.
+- Mỗi giai đoạn làm trên nhánh riêng, gộp vào `main` ở điểm kiểm soát. Mỗi task một commit (không ghi tên công cụ AI), không
+  push khi chưa được yêu cầu.
+- Điểm kiểm soát CP4/CP5/CP6: dừng, báo số đo thật, chờ duyệt. **Đường lùi:** nếu CP4 cho thấy mất hành vi vững mà không gỡ
+  được trong tuần 2, quay về kiến trúc hiện tại và chỉ làm "phương án giữa" (gộp cảnh báo, một điểm hiển thị, sửa hiệu năng).
+- Tuần 1–2 có thể trượt sang đầu tuần 3; MR30 và MR31 là phần đệm, cắt được nếu thiếu thời gian.
+
+**Chỉ số mục tiêu** (đo lại ở CP6)
+
+| Chỉ số | Hiện tại | Mục tiêu |
+|---|---|---|
+| Hành vi vững / tổng | 10/25 | ≥ 20/28 |
+| Cảnh báo sinh ra cho 1 cuộc tấn công (E2E `user020`) | 4 | 1 |
+| Điểm rủi ro hiển thị cho 1 lần đăng nhập | 3 (tầng 2, tầng 3, hybrid) | 1 |
+| Độ trễ đăng nhập tuần tự (median) | 614 ms | ≤ 350 ms (bcrypt chiếm ~230 ms) |
+| 10 request đồng thời | timeout | không timeout, p95 ghi rõ |
+| Báo nhầm trên lưu lượng hợp lệ "khó" | chưa đo | ≤ 1% đăng nhập hợp lệ, đo theo từng luật |
+| Đăng nhập hợp lệ từ IP Việt Nam bị báo (MR13) | có | không |
+| Kiểm chứng trên log thật | không (RBA là dữ liệu tổng hợp) | có (LANL) |
+
+**Câu hỏi hội đồng dễ gặp → task giải quyết**
+
+| Có thể bị hỏi | Ở đâu |
+|---|---|
+| "Sao có 5 cơ chế phát hiện chồng nhau, 3 điểm rủi ro, tin cái nào?" | MR21–MR23 |
+| "Một cuộc tấn công mà ra 4 cảnh báo?" | MR23 |
+| "Đăng nhập sao chậm, tải cao thì sao?" | MR20 |
+| "Nhiều luật trọng số 0–5% thì có tác dụng gì?" | MR24–MR25 |
+| "Đăng nhập bình thường mà cũng bị báo?" (lúc demo) | MR26 |
+| "Chỉ bắt được 10 hành vi?" | MR27–MR30 |
+| "Dữ liệu tổng hợp, có dữ liệu thật không?" | MR31 |
+| "Hệ thống phát hiện đăng nhập bất thường mà trang admin không được bảo vệ?" | MR32 |
+| "Lưu IP, thiết bị, vị trí người dùng có vi phạm dữ liệu cá nhân không?" | MR32 |
+| "Code có tự viết không, giải thích phần X?" | H1–H5, MR39 |
+| "Demo lỗi thì sao?" | MR36 |
+
+## Giai đoạn G — Hợp nhất kiến trúc (tuần 1 – đầu tuần 2)
+
+- [ ] **MR20 [Lõi, M] Ngữ cảnh đăng nhập dùng chung + sửa hiệu năng** (tuần 1)
+  - [ ] `LoginContext` dựng MỘT lần cho mỗi lần đăng nhập: GeoIP, ASN, phân tích UA, lịch sử tài khoản, thống kê IP/ASN 24h —
+    thay 3 lần truy vấn lịch sử hiện nay (baseline tầng 2, `DbAccountHistory`, `_user_events`)
+  - [ ] Đặc trưng đếm theo user (`u_*` của RBA) đọc từ hồ sơ tổng hợp cập nhật dần, thay vì quét toàn bộ lịch sử
+    (`_user_events` hiện không giới hạn dòng); chỉ truy vấn cửa sổ gần cho đặc trưng nhịp
+  - [ ] Gộp `GlobalCountsCache` (`rba_live_features.py`) và `DbGlobalStats` (`rule_engine_runtime.py`) — hai bộ cùng quét toàn
+    bảng mỗi 30 giây — thành một, có khoá chống nhiều request cùng làm mới
+  - [ ] `scripts/benchmark_login.py` dùng tài khoản mới mỗi lần chạy (hiện tái dùng `alice`, tự làm phình lịch sử)
+  - Xong khi: test tương đương offline/online của MR3 vẫn qua (đặc trưng không đổi); median tuần tự ≤ 350 ms; 10 request đồng
+    thời không timeout; toàn bộ test qua
+- [ ] **MR21 [Lõi, L] Một bộ luật duy nhất: gộp tầng 1 + tầng 2 vào rule engine v2, thêm "mức hành động tối thiểu"** (tuần 1)
+  - [ ] `RuleSpec.min_action`: luật xác định mang sẵn hành động tối thiểu, tổng quát hoá cơ chế ghi đè của `blocklist_hit`.
+    Giải quyết việc chỉ 1/19 luật đủ trọng số để tự cảnh báo. Mức cụ thể chốt ở MR25 bằng số đo báo nhầm; tạm thời:
+    `brute_force`, `credential_stuffing`, `impossible_travel` → alert; `success_after_failures` → step_up; `blocklist_hit` → lock
+  - [ ] Thành phần tầng 2 (giờ lệch +20, IP lạ +30, chuỗi sai +40, thành công sau chuỗi sai +50) chuyển thành luật v2 hoặc đặc
+    trưng ML tương ứng — bỏ bảng cộng điểm cứng riêng
+  - [ ] Xoá `app/detection/rules.py` (chuyển `haversine_distance` sang `app/utils/geo.py` vì `ml/features.py` đang import),
+    `scoring.py`, phần tầng 1 của `rate_counter.py`, `scripts/backfill_baseline.py` nếu không còn dùng. Thay 31 test cũ
+    (`test_rules.py`, `test_scoring.py`, `test_baseline.py`, `test_rate_counter.py`) bằng test luật v2 tương đương
+  - [ ] Sửa docstring sai ở `hybrid/combine.py` (enforce/shadow không quyết định cảnh báo trên luồng thật, xem
+    [`untested-behaviors-measured.md`](untested-behaviors-measured.md)); định nghĩa lại enforce/shadow cho kiến trúc mới
+  - Xong khi: mọi kịch bản MR18, 7 kịch bản bổ sung và E2E TC1 vẫn có cảnh báo; không mất hành vi vững nào so với bảng 10/25
+- [ ] **MR22 [Lõi, M] Một lớp ML: mô hình địa lý-thời gian (tầng 3) thành nguồn bằng chứng của hybrid** (tuần 1)
+  - [ ] Điểm Isolation Forest tầng 3 → xác suất đã hiệu chỉnh (val của dữ liệu tự sinh) → nguồn `ml_geo` trong noisy-OR, cạnh
+    `hybrid_cp2`
+  - [ ] Cổng cold-start: không chấm tài khoản có ít hơn N lần thành công — sửa lỗi `ml_anomaly` báo gần như mọi tài khoản mới
+    (đo ở MR18)
+  - [ ] Cố định random seed của `ml/generate_dataset.py` (tồn từ MR18) để số đo tái lập được
+  - Xong khi: recall các kiểu địa lý-thời gian giữ nguyên hoặc ghi rõ thay đổi; kịch bản tài khoản mới hợp lệ không bị báo
+- [ ] **MR23 [Lõi, M] Một sự cố = một cảnh báo, một điểm rủi ro** (đầu tuần 2)
+  - [ ] Viết lại `pipeline.py` (538 dòng) theo 5 bước: ngữ cảnh → luật → ML → gộp điểm → hành động/cảnh báo. Chống trùng lặp
+    MR13 áp dụng cho MỌI bằng chứng (hiện chỉ cho `hybrid_risk`)
+  - [ ] Migration: ngừng ghi hoặc xoá `login_events.risk_score`, `ml_anomaly_score`; thống nhất `alert_type`; bằng chứng
+    impossible travel vẫn mang toạ độ trước/sau
+  - [ ] Frontend: bảng log và biểu đồ dùng một điểm (`RiskChartPanel` hiện vẽ điểm tầng 2 trong khi cảnh báo dùng điểm hybrid);
+    danh sách cảnh báo hiện họ tấn công + toàn bộ bằng chứng; `MapPanel` đọc toạ độ từ bằng chứng mới (hiện dựa vào
+    `alert_type === "impossible_travel"`)
+  - [ ] Sửa 23 test pipeline MR12–MR15 theo luồng mới
+  - Xong khi: tấn công `user020` (E2E TC1) ra đúng 1 cảnh báo, liệt kê đủ bằng chứng; bản đồ vẫn vẽ đường bay; toàn bộ test và
+    kịch bản qua
+- [ ] **CP4 — sau MR23**: báo độ trễ, số cảnh báo/sự cố, số hành vi vững trước/sau; chủ dự án duyệt rồi mới hiệu chỉnh
+
+## Giai đoạn H — Hiệu chỉnh và độ tin cậy (tuần 2 – tuần 3)
+
+- [ ] **MR24 [Lõi, L] Bộ dữ liệu hiệu chỉnh có nhãn** (tuần 2)
+  - [ ] Mỗi họ tấn công thành nhiều biến thể ngẫu nhiên có hạt giống (nạn nhân, IP thật lấy từ danh sách đã xác minh, nhịp, số
+    bước) — hiện mỗi kịch bản chạy đúng 1 lần
+  - [ ] Bộ sinh lưu lượng hợp lệ có "ca khó": người dùng VPN, văn phòng chung NAT, đi công tác, gõ sai vài lần, đăng nhập đêm,
+    tài khoản mới, nhiều nhà mạng Việt Nam
+  - [ ] Chia bộ hiệu chỉnh / bộ đánh giá theo hạt giống, tách rời (tránh tự chấm điểm cho mình)
+  - Xong khi: ≥ 30 biến thể mỗi họ; data card riêng ghi rõ dữ liệu tự sinh và giới hạn
+- [ ] **MR25 [Lõi, M] Hiệu chỉnh lại trọng số luật và mức tối thiểu** (tuần 2)
+  - [ ] Trọng số trên bộ MR24 cho 10 luật RBA không đo được (đang 5% mặc định) và 4 luật ra 0% do mẫu nhỏ hoặc do RBA làm nhiễu
+    quốc gia/thời gian; giữ trọng số RBA cho luật đo hợp lệ trên RBA; mỗi trọng số ghi nguồn + khoảng tin cậy
+  - [ ] Chốt `min_action` từng luật xác định theo báo nhầm đo trên lưu lượng hợp lệ khó
+  - Xong khi: báo nhầm trên bộ đánh giá ≤ 1% đăng nhập hợp lệ; bảng trước/sau cho từng luật
+- [ ] **MR26 [Lõi, M] Hiệu chỉnh cho người dùng Việt Nam + sức khoẻ mô hình có ý nghĩa** (tuần 3)
+  - [ ] Hiệu chỉnh lại ánh xạ điểm → xác suất của `hybrid_cp2` trên lưu lượng hợp lệ kiểu Việt Nam (không train lại, số đo trên
+    RBA giữ nguyên); ngưỡng theo báo nhầm mục tiêu
+  - [ ] PSI so với cửa sổ đầu của chính hệ thống (cùng nguồn); tách riêng chỉ số "khoảng cách RBA → hệ thống" có chú thích
+  - Xong khi: kịch bản đối chứng IP Việt Nam (MR13 `benign_control`) không bị báo; số đo ATO trên RBA không đổi; trang Model
+    Health hiện số đọc được
+- [ ] **CP5 — sau MR26**: số hành vi vững, báo nhầm theo từng luật, độ trễ
+
+## Giai đoạn I — Mở rộng hành vi (tuần 3 – tuần 4)
+
+Một hành vi chỉ được tính "vững" khi: kịch bản tấn công (bộ đánh giá MR24) có cảnh báo nhờ CHÍNH tín hiệu đó, và lưu lượng hợp
+lệ khó không vượt mục tiêu báo nhầm. Mỗi hành vi cập nhật vào [`behavior-coverage-matrix.md`](behavior-coverage-matrix.md).
+
+- [ ] **MR27 [Lõi, M] Đợt 1 — 5 hành vi đã có luật nhưng chưa tự báo**: dò danh sách tài khoản; rải mật khẩu chậm; botnet phân
+  tán (thêm biến thể botnet cùng khu vực địa lý, chưa từng kiểm chứng); xoay UA; đăng nhập dồn dập (luật tốc độ thay tầng 3 đang
+  bắt 0%)
+- [ ] **MR28 [Nên, M] Đợt 2 — 3 hành vi mới**: đoán mã OTP liên tục (`verify-otp` hiện chỉ đếm số lần trong một challenge, không
+  ghi sự kiện); cố đăng nhập vào tài khoản đang bị khoá (đếm từ audit `reject_blocked_login`); một IP đăng nhập THÀNH CÔNG vào
+  nhiều tài khoản
+- [ ] **MR29 [Nên, M] Đợt 3 — luật kết hợp**: Tor/VPN/datacenter + quốc gia mới, thiết bị mới hoặc đăng nhập sai; bot UA + đăng
+  nhập sai
+- [ ] **MR30 [Thêm, S] Ngôn ngữ trình duyệt lệch quốc gia của IP** (Accept-Language) — chỉ làm nếu MR27–MR29 xong trước hạn
+- Mục tiêu giai đoạn: ≥ 20 hành vi vững trên khoảng 28
+
+## Giai đoạn J — Dữ liệu thật và tự bảo vệ (tuần 4)
+
+- [ ] **MR31 [Nên, L] Kiểm chứng trên log thật LANL** (hỏi trước khi tải ~12 GB)
+  - [ ] ETL `auth` + `redteam` (đọc luồng, có thể lấy mẫu theo ngày), chia theo thời gian
+  - [ ] Đặc trưng hành vi theo user: máy mới, giờ, loại xác thực, lan sang nhiều máy; Isolation Forest + baseline đơn giản
+  - [ ] So với kết quả đã công bố trên LANL (tra cứu bài báo)
+  - Xong khi: báo cáo riêng ghi rõ đây là kiểm chứng PHƯƠNG PHÁP trên log thật (log đăng nhập Windows nội bộ, khác cấu trúc web,
+    không nối vào `/login`)
+- [ ] **MR32 [Lõi, S] Hệ thống tự bảo vệ mình**
+  - [ ] `/admin/login` hiện không giới hạn số lần thử, không ghi log, không qua phát hiện (`routers/admin.py`) → giới hạn số lần,
+    khoá tạm, ghi audit
+  - [ ] Rà bảo mật toàn bộ (`/security-review`), JWT, CORS, secrets, `TRUST_FORWARDED_FOR`
+  - [ ] Ghi chú lưu giữ/xoá dữ liệu cá nhân (IP, UA, vị trí) để trả lời câu hỏi về dữ liệu cá nhân
+- [ ] **MR33 [Nên, S] Dọn repo và mã**: xoá `backend/scripts/_soak_test_raw.json` và thêm vào `.gitignore`; FastAPI `lifespan`
+  thay `on_event`; `create_admin.py` không crash khi thiếu `PYTHONIOENCODING`; ruff/format; xoá code chết sau hợp nhất
+
+## Giai đoạn K — Nghiệm thu và đóng băng (tuần 5)
+
+- [ ] **MR34 [Lõi, M] Nghiệm thu toàn bộ**: regression + độ phủ test (`pytest-cov`); E2E trình duyệt cho mọi hành vi vững thao
+  tác được qua UI; benchmark (tài khoản mới); soak 60 phút; sửa lỗi chặn demo
+- [ ] **MR35 [Lõi, M] Đồng bộ tài liệu với kiến trúc mới**: README, sơ đồ kiến trúc, api-contract, db-schema, getting-started,
+  model card, ma trận phủ hành vi, hướng dẫn tái lập; tài liệu cũ đánh dấu "lịch sử"
+- [ ] **MR36 [Lõi, S] Demo chắc chắn**: khởi động một lệnh (docker compose cả backend + frontend, hoặc script), script reset dữ
+  liệu demo, tài khoản demo, chạy kịch bản tấn công một lệnh, quay video dự phòng
+- [ ] **CP6 — đóng băng code**: sau mốc này chỉ sửa lỗi chặn demo
+
+## Giai đoạn L — Báo cáo và bảo vệ (tuần 6)
+
+- [ ] **MR37 [Lõi, L] Báo cáo đồ án** theo mẫu của trường; mọi hình và bảng lấy từ số đo thật
+- [ ] **MR38 [Lõi, M] Slide + kịch bản demo 10–15 phút** (kèm video dự phòng từ MR36)
+- [ ] **MR39 [Lõi, M] Ngân hàng câu hỏi hội đồng** (~60 câu: kiến trúc, ML, dữ liệu, đánh giá, bảo mật, hạn chế) + đáp án + 2
+  buổi bảo vệ thử
+
+## Song song suốt 6 tuần
+
+- [ ] **H1–H5 — Hiểu hệ thống** (cuối mỗi tuần): giải thích phần vừa đổi + 10 câu hỏi kiểu hội đồng. H1 sơ đồ một trang và luồng
+  5 bước; H2 luật, mức tối thiểu, noisy-OR; H3 ML (Isolation Forest, LightGBM, recall/FPR/ROC-AUC, hiệu chỉnh); H4 hành vi và
+  đánh giá báo nhầm; H5 dữ liệu (RBA, LANL, tự sinh) và bảo mật
+- [ ] **DC — Đề cương** viết theo kiến trúc cuối cùng: bản nháp sau CP4, chốt sau CP5
+
+**Không làm trong giai đoạn này:** MR-S1–S4 (chưa duyệt); mô hình chuỗi/đồ thị; LLM; gọi API bên ngoài khi chưa hỏi; tải danh
+sách mật khẩu bị lộ (chỉ làm nếu duyệt thêm).
