@@ -70,11 +70,24 @@ def test_rule_weights_falls_back_to_the_default_for_unknown_rules():
     assert weights.weight_of("brute_force") == 0.4 and weights.weight_of("some_future_rule") == 0.07
 
 
-def test_rule_weights_round_trips_and_keeps_the_override_set():
-    weights = RuleWeights({"brute_force": RuleWeightEntry(0.4, True, 10, (0.2, 0.6)), "blocklist_hit": RuleWeightEntry(1.0, False)}, frozenset({"blocklist_hit"}), 0.05)
+def test_rule_weights_round_trips():
+    weights = RuleWeights({"brute_force": RuleWeightEntry(0.4, True, 10, (0.2, 0.6)), "blocklist_hit": RuleWeightEntry(1.0, False)}, 0.05)
     restored = RuleWeights.from_dict(json.loads(json.dumps(weights.to_dict())))
-    assert restored.entries == weights.entries and restored.override_rule_ids == weights.override_rule_ids and restored.default_weight == weights.default_weight
+    assert restored.entries == weights.entries and restored.default_weight == weights.default_weight
     assert RuleWeights.from_dict({}).weight_of("anything") == 0.05  # hồ sơ rỗng vẫn nạp được, dùng toàn mặc định
+
+
+def test_a_profile_from_before_mr21_with_an_override_list_still_loads():
+    """MR21 bỏ `override_rule_ids` (thay bằng `min_action` của luật) — hồ sơ cũ còn khoá đó vẫn phải nạp được, khoá bị bỏ qua."""
+    legacy = {"weights": {"brute_force": {"weight": 0.1, "calibrated": True, "n": 5, "ci95": None}}, "override_rule_ids": ["blocklist_hit"], "default_weight": 0.05}
+    weights = RuleWeights.from_dict(legacy)
+    assert weights.weight_of("brute_force") == 0.1 and "override_rule_ids" not in weights.to_dict()
+
+
+def test_action_floor_is_the_lowest_score_of_each_action():
+    bands = ActionBands(30, 60, 90)
+    assert [bands.floor(a) for a in ("allow", "alert", "step_up", "lock")] == [0, 30, 60, 90]
+    assert all(bands.classify(bands.floor(a)) == a for a in ("allow", "alert", "step_up", "lock"))
 
 
 def test_rule_weights_rejects_an_out_of_range_default():

@@ -143,9 +143,6 @@
     "ci95": null
    }
   },
-  "override_rule_ids": [
-   "blocklist_hit"
-  ],
   "default_weight": 0.05
  },
  "bands": {

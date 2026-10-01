@@ -1,11 +1,11 @@
 """Đánh giá & so sánh tầng 3 (ML) với tầng 2 thật trên CÙNG tập test
 (nhiệm vụ 7.1 + 7.2 — số liệu đưa vào báo cáo).
 
-Tầng 2 KHÔNG viết lại song song — gọi THẲNG `compute_risk_score()` thật từ
-app/detection/scoring.py, dựng `UserBaseline` giả từ ngữ cảnh đã lưu lúc
-trích xuất đặc trưng (ml/extract_features.py), nên số liệu so sánh phản
-ánh đúng code đang chạy thật trong hệ thống, không phải bản mô phỏng riêng
-có thể lệch.
+Tầng 2 KHÔNG viết lại song song — gọi THẲNG `compute_risk_score()`, nguyên văn công thức
+đã chạy trên luồng thật từ Tuần 4 tới MR20 (từ MR21 chuyển về ml/tier2_baseline.py làm
+phương pháp đối chứng, luồng thật không còn dùng), dựng `UserBaseline` giả từ ngữ cảnh
+đã lưu lúc trích xuất đặc trưng (ml/extract_features.py), nên số liệu so sánh không
+phải bản mô phỏng riêng có thể lệch.
 
 Xuất ra:
   - Bảng precision/recall/F1/ROC-AUC cho 4 phương pháp (tầng 2, Isolation
@@ -45,7 +45,7 @@ from sklearn.metrics import (
     roc_curve,
 )
 
-from app.detection.scoring import LOW_RISK_MAX, compute_risk_score
+from ml.tier2_baseline import LOW_RISK_MAX, compute_risk_score
 from ml.features import FEATURE_NAMES
 
 ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "artifacts")

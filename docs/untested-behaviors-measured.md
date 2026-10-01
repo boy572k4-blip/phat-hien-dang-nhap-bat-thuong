@@ -1,5 +1,7 @@
 # Đo 7 hành vi còn "chưa đo" (bổ sung sau MR19)
 
+> **Ảnh chụp kết quả TRƯỚC MR21** (còn tầng 1 và tầng 2). Sau MR21 hai tầng đó đã gộp vào rule engine v2 — so sánh trước/sau trên đúng các kịch bản này: [`rule-unification.md`](rule-unification.md) mục 3. Chạy lại script để có kết quả hiện tại.
+
 Người dùng yêu cầu kiểm chứng trực tiếp (không chỉ đọc mã) cho 7 hành vi còn đánh dấu "chưa đo" ở [`behavior-coverage-matrix.md`](behavior-coverage-matrix.md). Dùng lại NGUYÊN hạ tầng kịch bản thật của MR18 (`ml/attack_scenarios.py` + `scripts/attack_scenario_runner.py`) — không phải MR mới, không đổi checklist.
 
 Mỗi hành vi đo HAI điều khác nhau: **(1) luật có khớp không** (gọi thẳng rule engine, record=False, trả lời đúng câu hỏi "logic luật đúng không" bất kể enforce/shadow) và **(2) có tạo alert nhìn thấy được không** (qua pipeline thật, MR12). Với luật `shadow`, (1)=có và (2)=không là kết quả **ĐÚNG THEO THIẾT KẾ**, không phải thất bại — shadow chỉ góp bằng chứng cho hybrid risk engine, không tự báo alert riêng (đã xác nhận cho `rare_network_login` ở MR18).

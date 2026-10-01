@@ -17,6 +17,9 @@ from typing import Any, Mapping
 
 SEVERITIES = ("low", "medium", "high")
 MODES = ("enforce", "shadow", "off")
+# Hành động tối thiểu một luật xác định có thể mang (MR21, `RuleSpec.min_action`) — theo thứ tự tăng dần, khớp
+# `app.detection.hybrid.calibration.ACTIONS` bỏ "allow" (test kiểm hai danh sách không lệch nhau).
+MIN_ACTIONS = ("alert", "step_up", "lock")
 DEVICE_TYPES = ("mobile", "desktop", "tablet", "bot", "unknown")
 
 

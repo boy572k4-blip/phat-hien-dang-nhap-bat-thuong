@@ -54,12 +54,25 @@ def test_unvalidated_or_noisy_rules_start_in_shadow_mode():
 
 
 def test_original_tier1_thresholds_are_preserved_as_defaults():
-    from app.detection import rules as legacy
-
-    assert REGISTRY["brute_force"].defaults() == {"threshold": legacy.BRUTE_FORCE_THRESHOLD, "window_s": 300}
+    """Ngưỡng của ba luật tầng 1 gốc (Tuần 3: 5 lần sai/5 phút; 10 lần sai + 5 tên/5 phút từ một IP; 900 km/h — module
+    tầng 1 đã xoá ở MR21, giá trị viết thẳng ở đây làm mốc) phải còn nguyên là mặc định của luật v2 thay thế chúng."""
+    assert REGISTRY["brute_force"].defaults() == {"threshold": 5, "window_s": 300}
     stuffing = REGISTRY["credential_stuffing"].defaults()
-    assert stuffing["min_fails"] == legacy.CREDENTIAL_STUFFING_FAIL_THRESHOLD and stuffing["min_users"] == legacy.CREDENTIAL_STUFFING_MIN_DISTINCT_USERNAMES
-    assert REGISTRY["impossible_travel"].defaults() == {"max_speed_kmh": legacy.IMPOSSIBLE_TRAVEL_SPEED_KMH}
+    assert (stuffing["min_fails"], stuffing["min_users"], stuffing["window_s"]) == (10, 5, 300)
+    assert REGISTRY["impossible_travel"].defaults() == {"max_speed_kmh": 900.0}
+
+
+def test_a_min_action_must_be_one_of_the_forcing_actions():
+    from app.detection.engine.types import MIN_ACTIONS
+    from app.detection.hybrid.calibration import ACTIONS
+
+    assert ACTIONS == ("allow", *MIN_ACTIONS)  # hai danh sách ở hai tầng (engine, hybrid) không được lệch nhau
+    ok = {}
+    declare(ok, id="forcing", min_action="step_up")
+    assert ok["forcing"].min_action == "step_up"
+    for bad in ("allow", "block", "LOCK"):
+        with pytest.raises(ValueError, match="hành động tối thiểu"):
+            declare({}, id="bad", min_action=bad)
 
 
 # ------------------------------------------------------------------------------------------------ khai báo luật

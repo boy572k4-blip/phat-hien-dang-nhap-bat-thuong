@@ -36,7 +36,7 @@ def _build_rule_out(rule_id: str, effective_mode: str, effective_params, overrid
     return RuleOut(
         id=spec.id, title=spec.title, category=spec.category, severity=spec.severity, description=spec.description,
         notes=spec.notes, techniques=list(spec.techniques), needs=list(spec.needs), default_mode=spec.default_mode,
-        mode=effective_mode, is_overridden=override is not None, params=params_out,
+        mode=effective_mode, min_action=spec.min_action, is_overridden=override is not None, params=params_out,
         updated_by=override.updated_by if override else None, updated_at=override.updated_at if override else None,
     )
 

@@ -1,14 +1,12 @@
-"""Chấm điểm risk score tầng 2 (nhiệm vụ 4.2).
+"""Phương pháp ĐỐI CHỨNG "tầng 2" (Tuần 4, nhiệm vụ 4.2): luật cộng điểm tay — chỉ để tái lập phép so sánh tầng 2 với
+ML ở `ml/evaluate.py` (số liệu đã đưa vào docs/ml-evaluation.md).
 
-Trọng số và ngưỡng phân loại lấy NGUYÊN VĂN checklist mục 4.2:
-  lệch giờ +20, IP lạ +30, fail liên tiếp +40, đăng nhập thành công ngay
-  sau chuỗi fail +50. Dưới 40 = bình thường, 40-70 = trung bình, trên 70 = cao.
+Từ MR21 công thức này KHÔNG còn chạy trên luồng đăng nhập (`app/detection/scoring.py` đã xoá): các thành phần của nó là
+luật v2 hoặc đặc trưng ML tương ứng (ánh xạ: docs/rule-unification.md). Giữ nguyên văn ở đây, cùng chỗ với các mô hình
+khác của phép so sánh (Isolation Forest, LOF, Autoencoder), để con số "tầng 2" trong báo cáo vẫn chạy lại được từ mã.
 
-Hàm này tính điểm tổng hợp cho MỌI lần đăng nhập (kể cả không khớp rule
-tầng 1), để lưu vào login_events.risk_score đúng yêu cầu checklist.
-Alert tầng 1 (brute_force/credential_stuffing/impossible_travel) ở
-routers/auth.py vẫn giữ nguyên — Alert "high_risk_score" ở đây là bổ sung,
-không thay thế.
+Trọng số và ngưỡng lấy NGUYÊN VĂN checklist mục 4.2: lệch giờ +20, IP lạ +30, fail liên tiếp +40, đăng nhập thành công
+ngay sau chuỗi fail +50. Dưới 40 = bình thường, 40-70 = trung bình, trên 70 = cao.
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.detection.baseline import is_in_learning_mode
-from app.models import UserBaseline
 
 UNUSUAL_HOUR_WEIGHT = 20
 UNKNOWN_LOCATION_WEIGHT = 30
@@ -29,7 +26,6 @@ MEDIUM_RISK_MAX = 70  # 40-70: trung bình, > 70: cao
 # ⚠️ Giả định (docs/api-contract.md mục 6) — không có trong checklist gốc.
 UNUSUAL_HOUR_STDDEV_MULTIPLIER = 2.5
 MIN_STDDEV_HOURS = 0.5  # tránh stddev quá nhỏ khiến mọi lệch nhỏ đều bị tính bất thường
-SUCCESS_AFTER_FAIL_STREAK_MIN_FAILS = 3  # "chuỗi" = nhiều hơn 1 lần fail
 
 
 @dataclass
@@ -52,15 +48,7 @@ class RiskFactors:
         return min(score, 100)
 
 
-def classify_severity(score: int) -> str:
-    if score < LOW_RISK_MAX:
-        return "low"
-    if score <= MEDIUM_RISK_MAX:
-        return "medium"
-    return "high"
-
-
-def is_unusual_hour(baseline: UserBaseline | None, login_hour: float) -> bool:
+def is_unusual_hour(baseline, login_hour: float) -> bool:
     """False khi đang ở chế độ học hoặc thiếu baseline — không đủ dữ liệu để kết luận."""
     if baseline is None or is_in_learning_mode(baseline) or baseline.avg_login_hour is None:
         return False
@@ -72,33 +60,9 @@ def is_unusual_hour(baseline: UserBaseline | None, login_hour: float) -> bool:
     return diff > UNUSUAL_HOUR_STDDEV_MULTIPLIER * stddev
 
 
-def explain_factors(factors: RiskFactors, *, baseline: UserBaseline | None, login_hour: float) -> str:
-    """Sinh chuỗi NGẮN GỌN, kiểu gạch đầu dòng, cho các yếu tố đã kích hoạt —
-    dùng cho message của Alert 'high_risk_score'. Chỉ đủ chi tiết để đọc
-    lướt hiểu ngay (số giờ lệch, không kèm câu văn dài) — chi tiết đầy đủ
-    hơn (avg/stddev) đã có sẵn trong tooltip/trang chi tiết nếu cần tra lại.
-    """
-    parts: list[str] = []
-
-    if factors.unusual_hour and baseline is not None and baseline.avg_login_hour is not None:
-        diff = abs(login_hour - baseline.avg_login_hour)
-        diff = min(diff, 24 - diff)
-        parts.append(f"lệch giờ {diff:.1f}h (+{UNUSUAL_HOUR_WEIGHT}đ)")
-    if factors.unknown_location:
-        parts.append(f"vị trí lạ (+{UNKNOWN_LOCATION_WEIGHT}đ)")
-    if factors.consecutive_fail:
-        parts.append(f"đang bị dò mật khẩu (+{CONSECUTIVE_FAIL_WEIGHT}đ)")
-    if factors.success_after_fail_streak:
-        parts.append(f"thành công sau chuỗi fail (+{SUCCESS_AFTER_FAIL_STREAK_WEIGHT}đ)")
-
-    if not parts:
-        return "điểm nền, không yếu tố nổi bật"
-    return ", ".join(parts)
-
-
 def compute_risk_score(
     *,
-    baseline: UserBaseline | None,
+    baseline,
     login_hour: float,
     is_new_location: bool,
     consecutive_fail: bool,

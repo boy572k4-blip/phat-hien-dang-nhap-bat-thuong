@@ -92,6 +92,16 @@
   color: var(--warning);
 }
 
+/* MR21: luật xác định mang hành động tối thiểu — khớp ở chế độ "Bật" thì ít nhất là mức này, bất kể điểm. */
+.rule-card__min-action {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
 .rule-card__description {
   color: var(--text-muted);
   font-size: 0.85rem;

@@ -1,10 +1,11 @@
-"""MR11 — bộ gộp hybrid risk engine: noisy-OR, gộp luật/danh tiếng/ML thành điểm 0-100 và hành động, ghi đè, giải thích."""
+"""MR11 — bộ gộp hybrid risk engine: noisy-OR, gộp luật/danh tiếng/ML thành điểm 0-100 và hành động, giải thích.
+MR21 — hành động tối thiểu của luật xác định (`RuleSpec.min_action`), thay cơ chế "luật ghi đè" riêng của blocklist."""
 
 import math
 
 import pytest
 
-from app.detection.engine.registry import CATEGORIES, REGISTRY
+from app.detection.engine.registry import CATEGORIES, REGISTRY, RuleSpec
 from app.detection.engine.types import RuleHit
 from app.detection.hybrid.calibration import ActionBands, RuleWeightEntry, RuleWeights
 from app.detection.hybrid.combine import REPUTATION_CATEGORY, combine_risk, noisy_or
@@ -16,8 +17,19 @@ def hit(rule_id: str, weight_hint: str = "", mode: str = "enforce") -> RuleHit:
     return RuleHit(rule_id=rule_id, severity="high", message=f"đã khớp {rule_id}{weight_hint}", evidence={}, mode=mode, techniques=())
 
 
-def weights(entries: dict[str, float], override=frozenset(), default=0.05) -> RuleWeights:
-    return RuleWeights({rule_id: RuleWeightEntry(w, True, 100) for rule_id, w in entries.items()}, frozenset(override), default)
+def weights(entries: dict[str, float], default=0.05) -> RuleWeights:
+    return RuleWeights({rule_id: RuleWeightEntry(w, True, 100) for rule_id, w in entries.items()}, default)
+
+
+def spec(rule_id: str, min_action: str | None, category: str = "Đoán và dò mật khẩu") -> RuleSpec:
+    """Luật giả trong sổ đăng ký riêng: kiểm cơ chế `min_action` mà không phụ thuộc mức đang đặt cho luật thật (MR25 sẽ chốt lại)."""
+    return RuleSpec(
+        id=rule_id, title=f"luật {rule_id}", category=category, severity="high", techniques=(), description="", params=(), needs=(),
+        default_mode="enforce", evaluate=lambda ctx: None, min_action=min_action,
+    )
+
+
+CUSTOM = {s.id: s for s in (spec("evidence_only", None), spec("forces_alert", "alert"), spec("forces_step_up", "step_up"), spec("forces_lock", "lock", REPUTATION_CATEGORY))}
 
 
 # ------------------------------------------------------------------------------------------------ noisy_or
@@ -91,23 +103,53 @@ def test_two_rules_in_the_same_group_combine_via_noisy_or_not_just_the_max():
     assert result.rule_probability == pytest.approx(1 - 0.7 * 0.7) and result.rule_probability > 0.3  # nhiều hơn từng luật riêng lẻ
 
 
-# ------------------------------------------------------------------------------------------------ ghi đè
+# ------------------------------------------------------------------------------------------------ hành động tối thiểu (MR21)
 
 
-def test_an_override_rule_forces_a_lock_regardless_of_everything_else():
-    result = combine_risk(ml_probability=0.01, hits=[hit("blocklist_hit")], weights=weights({"blocklist_hit": 0.01}, override={"blocklist_hit"}), bands=BANDS)
-    assert result.overridden_by == "blocklist_hit" and result.action == "lock" and result.score == 100 and result.probability == 1.0
+def test_a_rule_with_a_min_action_forces_that_action_whatever_its_weight():
+    """Trọng số 1% một mình chỉ cho điểm 1 (allow) — luật xác định vẫn phải tự cảnh báo được: đúng lý do MR21 tồn tại."""
+    result = combine_risk(ml_probability=None, hits=[hit("forces_alert")], weights=weights({"forces_alert": 0.01}), bands=BANDS, registry=CUSTOM)
+    assert result.action == "alert" and result.overridden_by == "forces_alert"
+    assert result.probability == pytest.approx(0.01)  # xác suất của bằng chứng KHÔNG bị nâng — chỉ điểm hiển thị bị nâng
+    assert result.score == BANDS.alert_at  # nâng lên ngưỡng thấp nhất của hành động, để điểm và hành động không mâu thuẫn
 
 
-def test_override_wins_even_when_it_fires_alongside_other_low_confidence_hits():
-    result = combine_risk(ml_probability=0.02, hits=[hit("brute_force"), hit("blocklist_hit")], weights=weights({"brute_force": 0.05, "blocklist_hit": 0.9}, override={"blocklist_hit"}), bands=BANDS)
-    assert result.overridden_by == "blocklist_hit" and result.action == "lock"
-    assert result.rule_probability == pytest.approx(0.05)  # thành phần luật vẫn tính đúng, chỉ hành động cuối bị ghi đè
+def test_lock_as_a_min_action_replaces_the_old_blocklist_override():
+    result = combine_risk(ml_probability=0.01, hits=[hit("forces_lock")], weights=weights({"forces_lock": 0.01}), bands=BANDS, registry=CUSTOM)
+    assert result.action == "lock" and result.overridden_by == "forces_lock" and result.score == BANDS.lock_at
 
 
-def test_first_override_hit_in_iteration_order_is_the_one_reported():
-    result = combine_risk(ml_probability=None, hits=[hit("blocklist_hit"), hit("tor_exit")], weights=weights({}, override={"blocklist_hit", "tor_exit"}), bands=BANDS)
-    assert result.overridden_by == "blocklist_hit"
+def test_a_min_action_never_lowers_what_the_score_already_reached():
+    result = combine_risk(ml_probability=0.9, hits=[hit("forces_alert")], weights=weights({"forces_alert": 0.1}), bands=BANDS, registry=CUSTOM)
+    assert result.action == "lock" and result.overridden_by is None  # điểm 91 tự đạt lock — luật không phải lý do
+    assert result.score == round(100 * (1 - 0.1 * 0.9))
+
+
+def test_the_heaviest_min_action_wins_when_several_rules_force():
+    hits = [hit("forces_alert"), hit("forces_step_up"), hit("evidence_only")]
+    result = combine_risk(ml_probability=None, hits=hits, weights=weights({}, default=0.0), bands=BANDS, registry=CUSTOM)
+    assert result.action == "step_up" and result.overridden_by == "forces_step_up" and result.score == BANDS.step_up_at
+
+
+def test_shadow_hits_count_as_evidence_but_never_force_an_action():
+    """MR21: định nghĩa mới của shadow — vẫn là bằng chứng có trọng số, nhưng không tự ép hành động."""
+    shadow = combine_risk(ml_probability=None, hits=[hit("forces_lock", mode="shadow")], weights=weights({"forces_lock": 0.3}), bands=BANDS, registry=CUSTOM)
+    assert shadow.reputation_probability == pytest.approx(0.3) and shadow.score == 30 and shadow.action == "alert"  # theo điểm
+    assert shadow.overridden_by is None
+
+
+def test_rules_without_a_min_action_only_ever_contribute_their_weight():
+    result = combine_risk(ml_probability=None, hits=[hit("evidence_only")], weights=weights({"evidence_only": 0.1}), bands=BANDS, registry=CUSTOM)
+    assert result.action == "allow" and result.score == 10 and result.overridden_by is None
+
+
+def test_the_real_registry_ships_the_provisional_min_actions_of_the_plan():
+    """Mức tạm thời theo kế hoạch MR21 (docs/checklist.md) — MR25 chốt lại bằng số đo báo nhầm; đổi mức thì sửa cả test này."""
+    forcing = {rule_id: s.min_action for rule_id, s in REGISTRY.items() if s.min_action is not None}
+    assert forcing == {
+        "brute_force": "alert", "credential_stuffing": "alert", "impossible_travel": "alert",
+        "success_after_failures": "step_up", "blocklist_hit": "lock",
+    }
 
 
 # ------------------------------------------------------------------------------------------------ giải thích, trùng lặp, dữ liệu tuỳ ý
@@ -124,7 +166,7 @@ def test_a_duplicated_hit_for_the_same_rule_is_only_counted_once():
 
 
 def test_shadow_mode_hits_still_count_as_evidence():
-    """Shadow chỉ quyết định RuleEngine có tự tạo cảnh báo hay không (app/detection/engine); ở bộ gộp, mọi lần khớp là bằng chứng."""
+    """Shadow vẫn là bằng chứng có trọng số (MR21: chỉ không được ép hành động tối thiểu — luật này cũng không có mức nào)."""
     enforce = combine_risk(ml_probability=None, hits=[hit("country_hop", mode="enforce")], weights=weights({"country_hop": 0.3}), bands=BANDS)
     shadow = combine_risk(ml_probability=None, hits=[hit("country_hop", mode="shadow")], weights=weights({"country_hop": 0.3}), bands=BANDS)
     assert enforce.score == shadow.score == 30

@@ -36,6 +36,9 @@ def test_list_returns_every_registered_rule_at_its_default_mode_when_no_override
     assert rule["mode"] == rule["default_mode"] and rule["is_overridden"] is False
     assert rule["updated_by"] is None and rule["updated_at"] is None
     assert any(p["value"] == p["default"] for p in rule["params"])
+    # MR21: trang "Cấu hình luật" hiện hành động tối thiểu của luật xác định; luật chỉ là bằng chứng thì không có.
+    assert all(by_id[rid]["min_action"] == spec.min_action for rid, spec in REGISTRY.items())
+    assert rule["min_action"] == "alert" and by_id["country_hop"]["min_action"] is None
 
 
 def test_put_mode_only_creates_an_override_writes_audit_log_and_does_not_touch_params(client, db_session):

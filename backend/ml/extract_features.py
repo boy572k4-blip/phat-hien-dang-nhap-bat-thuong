@@ -8,9 +8,9 @@ rỉ dữ liệu tương lai vào đặc trưng (xem ml/features.py).
 Ngoài 9 đặc trưng cho ML, còn ghi thêm 4 cột "ngữ cảnh" (avg/stddev giờ,
 số lần đăng nhập, lần đầu tiên) — KHÔNG dùng làm input cho ML, chỉ để
 ml/evaluate.py dựng lại đúng `UserBaseline` và gọi THẲNG hàm
-`compute_risk_score()` thật của tầng 2 (app/detection/scoring.py), đảm bảo
-so sánh tầng 2 vs tầng 3 công bằng trên cùng 1 hàm sản xuất thật, không
-phải bản viết lại song song có thể lệch nhau.
+`compute_risk_score()` của tầng 2 (nguyên văn hàm đã chạy thật tới MR20, nay ở
+ml/tier2_baseline.py làm phương pháp đối chứng), đảm bảo so sánh tầng 2 vs
+tầng 3 công bằng, không phải bản viết lại song song có thể lệch nhau.
 
 Chạy (sau khi đã chạy ml/generate_dataset.py):
     cd backend

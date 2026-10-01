@@ -98,6 +98,26 @@ Tổng hợp lại 25 hành vi theo "có cảnh báo thật khi kiểm chứng, 
 `password_spray_slow` (10,2%, chỉ phát hiện qua `ml_anomaly`) và `scripted_client` (5%) không tự cảnh báo được, còn
 `success_after_failures` thì có (qua tầng 2). Số đúng là **10**.
 
+## Cập nhật sau MR21: một bộ luật duy nhất
+
+Tầng 1 và bảng cộng điểm của tầng 2 đã xoá ([`rule-unification.md`](rule-unification.md)); hai cột "Tầng 1 gốc" và phần
+"tầng 2" trong bảng trên là lịch sử. Đo lại 17 kịch bản qua pipeline thật trước/sau MR21: **không hành vi nào mất phát
+hiện hay bị phát hiện muộn hơn**. Số hành vi vững vẫn là **10**, chỉ đổi cơ chế:
+
+| Hành vi vững | Trước MR21 | Sau MR21 |
+|---|---|---|
+| Dò mật khẩu 1 tài khoản | alert riêng của tầng 1 (+ tầng 2 "+40") | luật `brute_force`, hành động tối thiểu `alert` |
+| Nhồi thông tin đăng nhập | tầng 1 + luật v2 (34,6%) | luật `credential_stuffing` (34,6%), tối thiểu `alert` |
+| Thành công sau chuỗi sai | tầng 2 (+50) | luật `success_after_failures`, tối thiểu `step_up` |
+| Nguồn trong blocklist | ghi đè của hybrid | luật `blocklist_hit`, tối thiểu `lock` |
+| Di chuyển bất khả thi | alert riêng của tầng 1 | luật `impossible_travel`, tối thiểu `alert` |
+| Tài khoản ngủ đông, giờ lạ, vị trí lạ, thiết bị lạ (yếu) | tầng 3 (ML) | không đổi — tầng 3 (MR22 đưa vào hybrid) |
+| Chiếm tài khoản thật (RBA) | mô hình `hybrid_cp2` | không đổi |
+
+Ba hành vi nhóm "phụ thuộc hoàn cảnh" (botnet phân tán, xoay User-Agent, nhịp đều như máy) trước đây có alert tầng 1 trong
+khi hybrid quyết định "cho qua"; giờ hybrid ra `alert` thật nhờ luật đi kèm (`impossible_travel`, `brute_force`) — vẫn là
+"nhờ tín hiệu khác", nên vẫn thuộc nhóm đó.
+
 ## Nguồn dữ liệu
 
 Mọi con số trong bảng lấy TRỰC TIẾP từ tài liệu đã dẫn — không tính lại riêng cho bảng này. `[Đo được thật]` nghĩa là

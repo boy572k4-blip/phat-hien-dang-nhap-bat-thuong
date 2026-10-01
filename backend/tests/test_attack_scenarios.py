@@ -126,7 +126,7 @@ def test_large_scale_credential_stuffing_beats_its_own_rule(specs):
 
 
 def test_impossible_travel_two_real_distant_ips_within_a_short_window(specs):
-    from app.detection.rules import haversine_distance
+    from app.utils.geo import haversine_distance
     from app.detection.geoip import lookup_ip
 
     s = specs["impossible_travel"]

@@ -14,8 +14,8 @@ from typing import Any, Mapping
 import numpy as np
 
 ACTIONS = ("allow", "alert", "step_up", "lock")
+ACTION_RANK = {action: rank for rank, action in enumerate(ACTIONS)}  # so sánh "nặng hơn": lock > step_up > alert > allow
 DEFAULT_WEIGHT = 0.05  # chưa hiệu chỉnh được trên RBA (xem RuleWeights.weight_of): coi là bằng chứng YẾU, không phải "không có ý nghĩa"
-DEFAULT_OVERRIDE_RULE_IDS = frozenset({"blocklist_hit"})
 
 
 class HybridConfigError(ValueError):
@@ -93,11 +93,13 @@ class RuleWeightEntry:
 
 @dataclass(frozen=True)
 class RuleWeights:
-    """Trọng số của mọi luật + danh sách luật GHI ĐÈ (khớp là kết luận ngay, không qua noisy-OR — dành cho quyết định của
-    con người như blocklist, không phải bằng chứng xác suất) + trọng số mặc định cho luật không có trong `entries`."""
+    """Trọng số của mọi luật + trọng số mặc định cho luật không có trong `entries`.
+
+    MR21: bỏ danh sách "luật ghi đè" (`override_rule_ids`, trước đây chỉ có `blocklist_hit`) — quyết định chắc chắn
+    giờ là `min_action` khai báo ngay trên luật (`app/detection/engine/registry.py`), dùng chung cho mọi luật xác định.
+    Hồ sơ cũ còn khoá `override_rule_ids` vẫn đọc được (khoá đó bị bỏ qua)."""
 
     entries: Mapping[str, RuleWeightEntry] = field(default_factory=dict)
-    override_rule_ids: frozenset[str] = DEFAULT_OVERRIDE_RULE_IDS
     default_weight: float = DEFAULT_WEIGHT
 
     def __post_init__(self) -> None:
@@ -109,28 +111,24 @@ class RuleWeights:
         return self.default_weight if entry is None else entry.weight
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "weights": {rule_id: entry.to_dict() for rule_id, entry in self.entries.items()},
-            "override_rule_ids": sorted(self.override_rule_ids),
-            "default_weight": self.default_weight,
-        }
+        return {"weights": {rule_id: entry.to_dict() for rule_id, entry in self.entries.items()}, "default_weight": self.default_weight}
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "RuleWeights":
         try:
             entries = {rule_id: RuleWeightEntry.from_dict(entry) for rule_id, entry in data.get("weights", {}).items()}
-            override = frozenset(data.get("override_rule_ids", DEFAULT_OVERRIDE_RULE_IDS))
             default_weight = float(data.get("default_weight", DEFAULT_WEIGHT))
         except (TypeError, AttributeError) as exc:
             raise HybridConfigError(f"trọng số luật sai định dạng: {exc}") from exc
-        return cls(entries, override, default_weight)
+        return cls(entries, default_weight)
 
 
 @dataclass(frozen=True)
 class ActionBands:
     """Ba điểm cắt trên thang 0–100 chia bốn hành động: dưới `alert_at` là `allow`; [alert_at, step_up_at) là `alert`
     (hiện trong bảng điều khiển, không cản người dùng); [step_up_at, lock_at) là `step_up` (yêu cầu xác thực thêm);
-    từ `lock_at` trở lên là `lock` (khoá tạm) — cũng là hành động khi một luật GHI ĐÈ khớp, bất kể điểm."""
+    từ `lock_at` trở lên là `lock` (khoá tạm). Một luật enforce có `min_action` có thể nâng hành động lên trên mức mà
+    điểm tự nó đạt được (MR21, `combine.combine_risk`)."""
 
     alert_at: int
     step_up_at: int
@@ -151,6 +149,11 @@ class ActionBands:
         if score >= self.alert_at:
             return "alert"
         return "allow"
+
+    def floor(self, action: str) -> int:
+        """Điểm thấp nhất của `action` — điểm hiển thị được nâng lên mức này khi một luật ÉP hành động (MR21), để điểm và
+        hành động không mâu thuẫn ("điểm 10 nhưng bị khoá")."""
+        return {"allow": 0, "alert": self.alert_at, "step_up": self.step_up_at, "lock": self.lock_at}[action]
 
     def to_dict(self) -> dict[str, int]:
         return {"alert_at": self.alert_at, "step_up_at": self.step_up_at, "lock_at": self.lock_at}

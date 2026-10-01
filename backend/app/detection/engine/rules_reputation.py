@@ -75,7 +75,11 @@ def vpn_ip(ctx: RuleContext) -> Finding | None:
     category=CATEGORY,
     severity="high",
     description="IP, dải CIDR, ASN hoặc tên đăng nhập của lần thử nằm trong blocklist do quản trị viên đặt (còn hiệu lực).",
-    notes="Quyết định của con người nên không ánh xạ kỹ thuật MITRE cụ thể. Hạn dùng của mục chặn so với thời gian của sự kiện. MR16 bổ sung hành động chặn thật.",
+    min_action="lock",
+    notes=(
+        "Quyết định của con người nên không ánh xạ kỹ thuật MITRE cụ thể. Hạn dùng của mục chặn so với thời gian của sự kiện. MR16 bổ sung hành động "
+        "chặn thật. Hành động tối thiểu `lock` — trước MR21 là cơ chế \"luật ghi đè\" riêng của hybrid risk engine, giờ là trường hợp đặc biệt của `min_action`."
+    ),
 )
 def blocklist_hit(ctx: RuleContext) -> Finding | None:
     entry = ctx.blocklist.match(ctx.attempt)

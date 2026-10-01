@@ -420,18 +420,35 @@ Các mục dưới đây đổi mô hình hoặc quy tắc nên cần đồng ý
     làm hỏng cả giao dịch (→ MR23, mỗi khối một SAVEPOINT); **`/login` không chạy bcrypt khi tên không tồn tại → thời gian
     phản hồi lộ tài khoản có thật** (→ MR32); tài khoản mới đăng nhập dồn dập bằng trình duyệt hiếm bị đòi OTP 22/50 lần
     trong một lượt đo (→ MR26, báo nhầm)
-- [ ] **MR21 [Lõi, L] Một bộ luật duy nhất: gộp tầng 1 + tầng 2 vào rule engine v2, thêm "mức hành động tối thiểu"** (tuần 1)
-  - [ ] `RuleSpec.min_action`: luật xác định mang sẵn hành động tối thiểu, tổng quát hoá cơ chế ghi đè của `blocklist_hit`.
-    Giải quyết việc chỉ 1/19 luật đủ trọng số để tự cảnh báo. Mức cụ thể chốt ở MR25 bằng số đo báo nhầm; tạm thời:
-    `brute_force`, `credential_stuffing`, `impossible_travel` → alert; `success_after_failures` → step_up; `blocklist_hit` → lock
-  - [ ] Thành phần tầng 2 (giờ lệch +20, IP lạ +30, chuỗi sai +40, thành công sau chuỗi sai +50) chuyển thành luật v2 hoặc đặc
-    trưng ML tương ứng — bỏ bảng cộng điểm cứng riêng
-  - [ ] Xoá `app/detection/rules.py` (chuyển `haversine_distance` sang `app/utils/geo.py` vì `ml/features.py` đang import),
-    `scoring.py`, phần tầng 1 của `rate_counter.py`, `scripts/backfill_baseline.py` nếu không còn dùng. Thay 31 test cũ
-    (`test_rules.py`, `test_scoring.py`, `test_baseline.py`, `test_rate_counter.py`) bằng test luật v2 tương đương
-  - [ ] Sửa docstring sai ở `hybrid/combine.py` (enforce/shadow không quyết định cảnh báo trên luồng thật, xem
-    [`untested-behaviors-measured.md`](untested-behaviors-measured.md)); định nghĩa lại enforce/shadow cho kiến trúc mới
-  - Xong khi: mọi kịch bản MR18, 7 kịch bản bổ sung và E2E TC1 vẫn có cảnh báo; không mất hành vi vững nào so với bảng 10/25
+- [x] **MR21 [Lõi, L] Một bộ luật duy nhất: gộp tầng 1 + tầng 2 vào rule engine v2, thêm "mức hành động tối thiểu"** (tuần 1)
+  — chi tiết và số đo: [`rule-unification.md`](rule-unification.md)
+  - [x] `RuleSpec.min_action` (+ kiểm hợp lệ khi khai báo, hiện ở `GET /rules`, trang "Cấu hình luật" và danh mục luật tự
+    sinh). Khớp ở chế độ enforce → hành động ít nhất là mức đó; XÁC SUẤT của bằng chứng không đổi, chỉ điểm hiển thị được nâng
+    lên ngưỡng của hành động (không có cảnh báo "điểm 10 nhưng bị khoá"). Thay hẳn cơ chế ghi đè riêng của `blocklist_hit`
+    (bỏ `override_rule_ids` khỏi hồ sơ hybrid; hồ sơ cũ vẫn nạp được). Mức tạm thời đúng kế hoạch: `brute_force`,
+    `credential_stuffing`, `impossible_travel` → alert; `success_after_failures` → step_up; `blocklist_hit` → lock (chốt ở MR25)
+  - [x] Thành phần tầng 2: "chuỗi sai +40" → luật `brute_force` (cùng điều kiện); "thành công sau chuỗi sai +50" → luật
+    `success_after_failures` (ngưỡng có sẵn 5 lần/10 phút, chặt hơn mức 3 lần của tầng 2); "lệch giờ +20", "vị trí lạ +30" →
+    đặc trưng ML tương ứng (tầng 3 `hour_deviation_from_avg`/`is_new_location`, `hybrid_cp2` `new_country`). Bảng cộng điểm
+    chỉ còn là phương pháp đối chứng của phép so sánh Tuần 7 (`ml/tier2_baseline.py`, để số trong ml-evaluation.md vẫn tái lập
+    được). Điểm rủi ro duy nhất của lần đăng nhập (điểm hybrid) ghi cả vào `login_events.risk_score` và vào cảnh báo `ml_anomaly`
+  - [x] Xoá `app/detection/rules.py` (`haversine_distance` → `app/utils/geo.py`), `scoring.py`, toàn bộ bộ đếm tầng 1 của
+    `rate_counter.py` (chỉ còn kết nối Redis dùng chung). **Giữ** `scripts/backfill_baseline.py` và `baseline.py`: tầng 3 vẫn
+    cần `UserBaseline`/thiết bị/vị trí quen (tới MR22). Xoá `test_rules.py`, `test_scoring.py`, `test_rate_counter.py`; giữ
+    `test_baseline.py` (mã còn dùng). Test thay thế: `test_pipeline_mr21.py` (8 test qua pipeline thật, hồ sơ không ML để
+    hành động chỉ đến từ luật), test cơ chế `min_action` ở `test_hybrid_combine.py`/`test_rule_engine_registry.py`,
+    `test_geo.py`, `test_tier2_baseline.py`
+  - [x] Sửa docstring sai ở `hybrid/combine.py` và `registry.py`; định nghĩa lại: `enforce` = bằng chứng có trọng số + được ép
+    hành động tối thiểu; `shadow` = vẫn là bằng chứng có trọng số nhưng không bao giờ tự ép hành động; `off` = không chạy.
+    Chọn định nghĩa này (không phải "shadow không góp điểm") để giữ nguyên công thức hiệu chỉnh MR11 và các số đã công bố
+  - [x] Frontend tối thiểu để không vỡ giữa chừng: bản đồ vẽ đường bay từ toạ độ đi kèm cảnh báo hybrid (luật
+    `impossible_travel`), trang luật hiện hành động tối thiểu. Phần thống nhất giao diện còn lại thuộc MR23
+  - **Kết quả đo** (17 kịch bản qua pipeline thật, trước/sau): **không kịch bản nào mất phát hiện hay phát hiện muộn hơn**;
+    3 kịch bản trước đây chỉ có alert tầng 1 trong khi hybrid nói "cho qua" giờ có hành động `alert` thật (botnet phân tán,
+    xoay UA, nhịp đều); E2E TC1 vẫn `step_up`; cảnh báo không tính `ml_anomaly`: 44 → 15. Vẫn **10/25** hành vi vững (đổi cơ
+    chế, không mất). Khoảng trống đã biết (dò danh sách, bot UA, Tor/datacenter/VPN...) vẫn còn — MR25, MR27–MR30
+  - ⚠️ Đánh đổi ghi nhận: không còn đường dự phòng tầng 1 khi khối hybrid lỗi (một đường duy nhất); tổ hợp "lệch giờ + vị trí
+    lạ" của tầng 2 không còn cảnh báo riêng (vẫn do tầng 3 chấm); điểm hiển thị của `blocklist_hit` từ 100 thành `lock_at`
 - [ ] **MR22 [Lõi, M] Một lớp ML: mô hình địa lý-thời gian (tầng 3) thành nguồn bằng chứng của hybrid** (tuần 1)
   - [ ] Điểm Isolation Forest tầng 3 → xác suất đã hiệu chỉnh (val của dữ liệu tự sinh) → nguồn `ml_geo` trong noisy-OR, cạnh
     `hybrid_cp2`

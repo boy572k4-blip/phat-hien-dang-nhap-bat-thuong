@@ -1,11 +1,14 @@
 # Hệ thống phát hiện đăng nhập bất thường
 
 Đồ án tốt nghiệp — Anomaly Login Detection System. Giám sát các lần đăng nhập,
-chấm điểm rủi ro qua nhiều tầng phát hiện chạy **song song** (rule-based tầng 1
-→ rule engine v2 có thể cấu hình → behavioral scoring tầng 2 → ML tầng 3 → mô
-hình hybrid học từ dữ liệu học thuật RBA) và cảnh báo gần như tức thời trên
-dashboard, thay vì chỉ xác thực đúng/sai mật khẩu như một web app thông thường.
-Toàn cảnh tầng nào bắt hành vi nào: [`docs/behavior-coverage-matrix.md`](docs/behavior-coverage-matrix.md).
+chấm điểm rủi ro bằng **một bộ luật duy nhất** (rule engine v2 có thể cấu hình,
+luật xác định mang "hành động tối thiểu") kết hợp **mô hình học máy** (mô hình
+hybrid học từ dữ liệu học thuật RBA, cùng mô hình địa lý-thời gian tầng 3) thành
+một điểm rủi ro và một hành động — cho qua / cảnh báo / xác thực thêm / khoá tạm
+— hiện gần như tức thời trên dashboard, thay vì chỉ xác thực đúng/sai mật khẩu
+như một web app thông thường. Tầng 1 (luật đếm riêng, Tuần 3) và tầng 2 (cộng
+điểm tay, Tuần 4) đã gộp vào bộ luật ở MR21 — [`docs/rule-unification.md`](docs/rule-unification.md).
+Toàn cảnh cơ chế nào bắt hành vi nào: [`docs/behavior-coverage-matrix.md`](docs/behavior-coverage-matrix.md).
 
 Tiến độ triển khai theo hai giai đoạn: **Tuần 1-8** (khung hệ thống, xem "Trạng
 thái" bên dưới) rồi **giai đoạn mở rộng AI, MR1-19** (nâng cấp lên rule engine

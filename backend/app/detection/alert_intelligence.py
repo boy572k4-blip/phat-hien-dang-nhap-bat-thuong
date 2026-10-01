@@ -18,6 +18,7 @@ from datetime import timedelta
 
 from app.detection.engine.registry import REGISTRY, RuleSpec
 from app.detection.hybrid import RiskResult
+from app.detection.hybrid.calibration import ACTION_RANK
 from ml.rba.explain import COMPONENT_LABELS
 from ml.rba.features import NULL_KEY, EventRecord, HistorySummary
 
@@ -160,13 +161,10 @@ def priority_score(novelty_facts: list[NoveltyFact], confidence: float | None, i
 # scope MR13, xem giới hạn ở docs/alert-intelligence-v2.md).
 DEDUP_WINDOW = timedelta(minutes=15)
 
-_ACTION_RANK = {"allow": 0, "alert": 1, "step_up": 2, "lock": 3}
-
-
 def action_escalated(previous_action: str, new_action: str) -> bool:
     """Có nên ghi thêm `response_actions`/`audit_log` khi CẬP NHẬT một alert đã gộp hay không: chỉ khi mức đề xuất
     TĂNG (vd alert -> lock) — không lặp lại đúng đề xuất cũ mỗi lần trùng, đúng tinh thần "chống trùng lặp"."""
-    return _ACTION_RANK.get(new_action, 0) > _ACTION_RANK.get(previous_action, 0)
+    return ACTION_RANK.get(new_action, 0) > ACTION_RANK.get(previous_action, 0)
 
 
 # -------------------------------------------------------------------------------------------------------- message
@@ -181,6 +179,12 @@ def build_alert_message(
     GỢI Ý kèm %, LUÔN kèm chữ "gợi ý" (không bao giờ khẳng định chắc chắn)."""
     reasons = "; ".join(f"{c.label} ({c.weight:.0%})" for c in risk_result.contributions[:3])
     parts = [f"Hybrid risk engine: điểm {risk_result.score}/100, đề xuất '{risk_result.action}' — {reasons}."]
+    if risk_result.overridden_by is not None:
+        # MR21: hành động đến từ "hành động tối thiểu" của một luật xác định, không phải từ điểm — luật đó có thể có trọng
+        # số thấp (không lọt top-3 ở trên) nên phải nói rõ, nếu không người đọc không biết vì sao lại là mức này.
+        spec = REGISTRY.get(risk_result.overridden_by)
+        title = spec.title if spec is not None else risk_result.overridden_by
+        parts.append(f"Mức '{risk_result.action}' là hành động tối thiểu của luật \"{title}\".")
     if novelty_facts:
         parts.append(novelty_facts[0].text[0].upper() + novelty_facts[0].text[1:] + ".")
     if family:

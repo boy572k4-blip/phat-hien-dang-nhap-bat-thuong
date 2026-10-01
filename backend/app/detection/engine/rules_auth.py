@@ -1,7 +1,9 @@
 """Nhóm "Đoán và dò mật khẩu": dò một tài khoản, nhồi thông tin đăng nhập, rải mật khẩu chậm, dò phân tán, dò danh sách tài khoản, thành công sau chuỗi sai.
 
-Hai luật đầu (`brute_force`, `credential_stuffing`) là luật tầng 1 gốc (app/detection/rules.py) với NGƯỠNG MẶC ĐỊNH GIỮ NGUYÊN, được nâng cấp:
+Hai luật đầu (`brute_force`, `credential_stuffing`) là luật tầng 1 gốc (Tuần 3) với NGƯỠNG MẶC ĐỊNH GIỮ NGUYÊN, được nâng cấp:
 `credential_stuffing` thêm phạm vi ASN, nới ngưỡng khi thấy xoay User-Agent và loại trừ khi tỉ lệ thành công cao (cổng NAT của cơ quan).
+Từ MR21 tầng 1 (và điểm cộng tay của tầng 2) bị xoá, chỉ còn các luật ở đây: luật xác định mang `min_action` để vẫn tự cảnh
+báo được dù trọng số hiệu chỉnh trên RBA thấp (xem docstring `app/detection/hybrid/combine.py`).
 """
 
 from __future__ import annotations
@@ -27,7 +29,12 @@ CATEGORY = "Đoán và dò mật khẩu"
         Param("threshold", 5, "số lần sai tối thiểu để báo", "lần", 2, 1000),
         Param("window_s", 300, "độ dài cửa sổ", "giây", 10, _DAY),
     ),
-    notes="Ngưỡng và cửa sổ là luật tầng 1 gốc (docs/api-contract.md mục 6, giả định chưa đối chiếu). Báo ở MỖI lần sai từ lần thứ `threshold` trở đi; gộp cảnh báo trùng là việc của MR13.",
+    min_action="alert",
+    notes=(
+        "Ngưỡng và cửa sổ là luật tầng 1 gốc (docs/api-contract.md mục 6, giả định chưa đối chiếu). Khớp ở MỖI lần sai từ lần thứ `threshold` trở đi; "
+        "gộp cảnh báo trùng là việc của MR13. Hành động tối thiểu `alert` (MR21, tạm thời — chốt ở MR25 bằng số đo báo nhầm) thay cho cảnh báo riêng "
+        "của tầng 1 và điểm \"chuỗi sai +40\" của tầng 2 (cùng điều kiện 5 lần/5 phút)."
+    ),
 )
 def brute_force(ctx: RuleContext) -> Finding | None:
     a, p = ctx.attempt, ctx.p
@@ -64,7 +71,8 @@ def brute_force(ctx: RuleContext) -> Finding | None:
         Param("ua_rotation_relax", 0.5, "hệ số nhân ngưỡng IP khi đang xoay UA (0,5 = nới một nửa)", "", 0.1, 1.0),
     ),
     needs=(),
-    notes="Phạm vi ASN chỉ chạy khi biết ASN (GeoLite2-ASN). Ngưỡng IP (10 lần, 5 tên, 5 phút) là luật gốc.",
+    min_action="alert",
+    notes="Phạm vi ASN chỉ chạy khi biết ASN (GeoLite2-ASN). Ngưỡng IP (10 lần, 5 tên, 5 phút) là luật gốc. Hành động tối thiểu `alert` (MR21, tạm thời — chốt ở MR25).",
 )
 def credential_stuffing(ctx: RuleContext) -> Finding | None:
     a, p = ctx.attempt, ctx.p
@@ -216,7 +224,12 @@ def username_enumeration(ctx: RuleContext) -> Finding | None:
         Param("min_fails", 5, "số lần sai tối thiểu trước đó vào tài khoản", "lần", 2, 100_000),
     ),
     needs=("account",),
-    notes="Người dùng thật cũng gõ sai vài lần rồi đúng; ngưỡng 5 (cao hơn mức 3 của điểm rủi ro tầng 2) để giảm báo nhầm — cần đo trên log thật ở MR10.",
+    min_action="step_up",
+    notes=(
+        "Người dùng thật cũng gõ sai vài lần rồi đúng; ngưỡng 5 (cao hơn mức 3 của điểm rủi ro tầng 2 cũ) để giảm báo nhầm — cần đo trên log thật. "
+        "Hành động tối thiểu `step_up` (MR21, tạm thời — chốt ở MR25): người dùng thật gõ sai nhiều lần chỉ phải xác thực thêm, kẻ đã đoán trúng mật "
+        "khẩu thì bị chặn ở bước đó — thay cho điểm \"thành công sau chuỗi sai +50\" của tầng 2."
+    ),
 )
 def success_after_failures(ctx: RuleContext) -> Finding | None:
     a, p = ctx.attempt, ctx.p

@@ -10,11 +10,16 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_admin
-from app.detection.scoring import LOW_RISK_MAX, MEDIUM_RISK_MAX
 from app.models import LoginEvent
 from app.schemas import PaginatedLoginEvents
 
 router = APIRouter()
+
+# Ngưỡng mức hiển thị low/medium/high (mục 4.2, Tuần 4) — trùng màu tô dòng của bảng log ở frontend (LogTablePanel.jsx).
+# Từ MR21 cột `risk_score` chứa điểm rủi ro DUY NHẤT (điểm hybrid) thay cho điểm cộng tay của tầng 2 đã xoá; MR23 đồng bộ
+# các mức này với ngưỡng hành động của hybrid (alert/step_up/lock) khi gộp hẳn hai cột điểm.
+LOW_RISK_MAX = 40
+MEDIUM_RISK_MAX = 70
 
 
 @router.get("/login-events", response_model=PaginatedLoginEvents)

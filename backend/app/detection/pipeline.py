@@ -1,6 +1,6 @@
 """Detection engine chạy BẤT ĐỒNG BỘ sau khi API /login đã trả response
-(nhiệm vụ 5.2) — GeoIP, rule tầng 1, risk score tầng 2, baseline, known
-device/location đều chuyển vào đây (trước ở routers/auth.py, chặn response).
+(nhiệm vụ 5.2) — GeoIP, luật, ML, baseline, known device/location đều chuyển
+vào đây (trước ở routers/auth.py, chặn response).
 Alert mới được broadcast qua WebSocket ngay sau khi commit (nhiệm vụ 5.3).
 MR16: không còn ĐÚNG TUYỆT ĐỐI cho lần thử MẬT KHẨU ĐÚNG — xem đoạn MR16 bên dưới.
 
@@ -11,9 +11,14 @@ Message của Alert đều được DIỄN GIẢI CỤ THỂ (không chỉ nói 
 1 con số điểm) — nâng cấp sau Tuần 7: admin đọc alert phải hiểu ngay tình
 huống là gì mà không cần vào tra log riêng.
 
-MR12 nối thêm rule engine v2 (MR9-10) + hybrid risk engine (MR11) — mục "MR12" ở cuối hàm — CHẠY SONG SONG tầng 1-2-3
-ở trên, KHÔNG THAY THẾ (đúng triết lý xuyên suốt module này). Toàn khối MR12 được cô lập trong một `try/except` RIÊNG:
-lỗi ở đó (đặc trưng RBA, rule engine, mô hình ML) không bao giờ làm mất alert của tầng 1-2-3 hay làm hỏng `event` đã ghi.
+MR21 — MỘT bộ luật duy nhất: tầng 1 (ba luật đếm Redis riêng của Tuần 3, mỗi lần khớp một alert riêng) và tầng 2 (bảng
+cộng điểm tay +20/+30/+40/+50 của Tuần 4, alert `high_risk_score`) đã bị XOÁ — cùng các dấu hiệu đó giờ là luật của rule
+engine v2 (MR9), luật xác định mang "hành động tối thiểu" (`RuleSpec.min_action`) nên vẫn tự cảnh báo được dù trọng số
+hiệu chỉnh trên RBA thấp. Điểm rủi ro DUY NHẤT của một lần đăng nhập là điểm hybrid (ghi cả vào `risk_score`). Ánh xạ
+từng thành phần cũ: docs/rule-unification.md. Tầng 3 (ML địa lý-thời gian, Tuần 7) vẫn tạo alert `ml_anomaly` riêng cho
+tới MR22. Đánh đổi: trước đây khối MR12 hỏng thì alert tầng 1 vẫn còn làm dự phòng; giờ chỉ còn một đường — các thành phần
+của nó (ngữ cảnh, rule engine, mô hình) đều không raise với lỗi thường gặp, khối vẫn được bọc `try/except` riêng để lỗi
+không làm mất `event` đã ghi hay làm sập luồng đăng nhập.
 
 MR13 (`app/detection/alert_intelligence.py`, THUẦN không đụng DB) làm giàu alert `hybrid_risk` NGAY TRONG khối MR12 ở
 trên: novelty so với lịch sử tài khoản, họ tấn công GỢI Ý, ưu tiên hiển thị, và chống trùng lặp — cùng (tài khoản hoặc
@@ -51,31 +56,12 @@ from sqlalchemy.exc import IntegrityError
 from app.database import SessionLocal
 from app.detection import alert_intelligence, hybrid_runtime, ml_model, perf
 from app.detection.adaptive_threshold import apply_delta
-from app.detection.baseline import (
-    is_known_location,
-    record_known_device_if_new,
-    record_known_location_if_new,
-    update_baseline_after_successful_login,
-)
+from app.detection.baseline import record_known_device_if_new, record_known_location_if_new, update_baseline_after_successful_login
 from app.detection.campaign_correlation import LIVE_CAMPAIGN_WINDOW
 from app.detection.geoip import lookup_asn, lookup_ip
 from app.detection.login_context import build_login_context
-from app.detection.rate_counter import check_fail_count, redis_client
 from app.detection.response_execution import LOCK_TTL, lock_kind_and_value
 from app.detection.rule_engine_runtime import build_rule_engine, invalidate_blocklist_cache
-from app.detection.rules import (
-    CREDENTIAL_STUFFING_FAIL_THRESHOLD,
-    CREDENTIAL_STUFFING_MIN_DISTINCT_USERNAMES,
-    IMPOSSIBLE_TRAVEL_SPEED_KMH,
-    BRUTE_FORCE_THRESHOLD,
-    GeoPoint,
-    haversine_distance,
-    is_brute_force,
-    is_credential_stuffing,
-    is_impossible_travel,
-    register_login_failure,
-)
-from app.detection.scoring import SUCCESS_AFTER_FAIL_STREAK_MIN_FAILS, classify_severity, compute_risk_score, explain_factors
 from app.models import Alert, AuditLog, BlocklistEntry, Campaign, LoginEvent, ResponseAction, User, UserBaseline, UserRiskProfile
 from app.utils.device import compute_device_fingerprint, parse_user_agent
 from app.utils.time import ensure_utc
@@ -83,9 +69,6 @@ from app.ws_manager import ws_manager
 from ml.features import compute_realtime_features
 
 logger = logging.getLogger("pipeline")
-
-_RULE_TIER1_RISK_SCORE = 80
-_RULE_TIER1_SEVERITY = "high"
 
 # MR12: điểm 0-100 của hybrid risk engine (MR11) -> severity của Alert khi hành động đề xuất không phải "allow".
 _HYBRID_SEVERITY = {"alert": "medium", "step_up": "high", "lock": "high"}
@@ -102,21 +85,6 @@ class PipelineResult:
     login_event_id: int | None
     hybrid_action: str | None
     hybrid_risk_score: int | None
-
-
-def _brute_force_message(username: str, fail_count: int) -> str:
-    return f"Dò mật khẩu '{username}': {fail_count} lần sai/5 phút (ngưỡng {BRUTE_FORCE_THRESHOLD})."
-
-
-def _credential_stuffing_message(ip: str, distinct_usernames: int, fail_count: int) -> str:
-    return (
-        f"IP {ip} thử {distinct_usernames} tài khoản khác nhau, {fail_count} lần sai/5 phút "
-        f"(ngưỡng {CREDENTIAL_STUFFING_MIN_DISTINCT_USERNAMES} TK / {CREDENTIAL_STUFFING_FAIL_THRESHOLD} lần)."
-    )
-
-
-def _impossible_travel_message(distance_km: float, elapsed_minutes: float, speed_kmh: float) -> str:
-    return f"Cách {distance_km:.0f}km chỉ sau {elapsed_minutes:.1f} phút (~{speed_kmh:,.0f} km/h, ngưỡng {IMPOSSIBLE_TRAVEL_SPEED_KMH:.0f})."
 
 
 def _run_detection_pipeline_sync(
@@ -146,17 +114,6 @@ def _run_detection_pipeline_sync(
         parsed_ua = parse_user_agent(user_agent)
         asn_result = lookup_asn(ip)
 
-        # MR18: epoch giây của SỰ KIỆN (không phải time.time() thật) — TRUYỀN vào mọi hàm đếm Redis tầng 1 bên dưới.
-        # Bug thật tự phát hiện khi dựng thư viện tấn công mô phỏng v2 (ml/attack_scenarios.py): các hàm này trước đó
-        # KHÔNG nhận now= nên luôn đếm theo time.time() thật — một kịch bản "chậm" (18 lần cách nhau ~25 phút THEO
-        # TIMESTAMP MÔ PHỎNG) vẫn bị credential_stuffing bắt NHẦM vì cả 18 lần gọi Redis xảy ra trong vài giây THẬT
-        # khi script chạy. Ảnh hưởng MỌI script mô phỏng có dùng tầng 1 kể từ MR13 (không đổi kết luận của các MR đó —
-        # xem docs/attack-scenarios-v2.md — nhưng là bug thật, không phải chỉ giới hạn đã biết).
-        now_epoch = ensure_utc(timestamp).timestamp()
-
-        # Đọc counter TRƯỚC khi register_login_failure cập nhật thêm.
-        recent_fail_count = check_fail_count(f"fail:{username}", now=now_epoch)
-
         event = LoginEvent(
             user_id=user_id,
             attempted_username=username,
@@ -178,95 +135,15 @@ def _run_detection_pipeline_sync(
         db.add(event)
         db.flush()
 
-        # (alert_type, message, extra field cho payload WebSocket)
-        triggered: list[tuple[str, str, dict]] = []
-
-        if user is not None:
-            previous_event = (
-                db.query(LoginEvent)
-                .filter(LoginEvent.user_id == user.id, LoginEvent.id != event.id)
-                .order_by(LoginEvent.created_at.desc())
-                .first()
-            )
-            if previous_event is not None:
-                previous_point = GeoPoint(previous_event.latitude, previous_event.longitude, previous_event.created_at)
-                current_point = GeoPoint(event.latitude, event.longitude, event.created_at)
-                if is_impossible_travel(previous_point, current_point):
-                    distance_km = haversine_distance(
-                        previous_event.latitude, previous_event.longitude, event.latitude, event.longitude
-                    )
-                    # Cùng bug thật đã sửa ở is_impossible_travel (app/detection/rules.py, phát hiện ở MR13): previous_event.created_at
-                    # đọc lại từ SQLite (test) mất tzinfo trong khi event.created_at vừa gán vẫn aware.
-                    elapsed_minutes = (ensure_utc(event.created_at) - ensure_utc(previous_event.created_at)).total_seconds() / 60
-                    speed_kmh = distance_km / (elapsed_minutes / 60) if elapsed_minutes > 0 else float("inf")
-                    # Kèm toạ độ điểm TRƯỚC để frontend vẽ đường nối 2 điểm trên bản đồ (nhiệm vụ 5.3).
-                    triggered.append(
-                        (
-                            "impossible_travel",
-                            _impossible_travel_message(distance_km, elapsed_minutes, speed_kmh),
-                            {"previous_latitude": previous_event.latitude, "previous_longitude": previous_event.longitude},
-                        )
-                    )
-
-        is_brute_force_flag = False
-        if not success:
-            register_login_failure(username, ip, now=now_epoch)
-            is_brute_force_flag = is_brute_force(username, now=now_epoch)
-            if is_brute_force_flag:
-                fail_count = check_fail_count(f"fail:{username}", now=now_epoch)
-                triggered.append(("brute_force", _brute_force_message(username, fail_count), {}))
-            if is_credential_stuffing(ip, now=now_epoch):
-                distinct_usernames = redis_client.zcard(f"cred_stuffing:{ip}")
-                fail_count_ip = check_fail_count(f"fail_ip:{ip}", now=now_epoch)
-                triggered.append(
-                    ("credential_stuffing", _credential_stuffing_message(ip, distinct_usernames, fail_count_ip), {})
-                )
-
+        # (Alert, extra field cho payload WebSocket)
         alert_records: list[tuple[Alert, dict]] = []
-        for alert_type, message, extra in triggered:
-            alert_obj = Alert(
-                login_event_id=event.id,
-                user_id=user_id,
-                alert_type=alert_type,
-                severity=_RULE_TIER1_SEVERITY,
-                risk_score=_RULE_TIER1_RISK_SCORE,
-                message=message,
-            )
-            db.add(alert_obj)
-            alert_records.append((alert_obj, extra))
 
+        # --- Tầng 3: ML địa lý-thời gian (Tuần 7), THAM KHẢO. Tính đặc trưng TRƯỚC khi record_known_*_if_new() bên dưới
+        # cập nhật thiết bị/vị trí quen, cho đúng ý nghĩa "chưa từng thấy" (giống lúc train offline). Alert `ml_anomaly`
+        # được tạo SAU khối hybrid để mang điểm rủi ro duy nhất của lần đăng nhập (MR21; MR22 gộp tầng 3 vào hybrid).
+        ml_features = ml_result = None
         if user is not None:
             baseline = db.query(UserBaseline).filter(UserBaseline.user_id == user.id).first()
-            login_hour = event.created_at.hour + event.created_at.minute / 60
-            known_location = is_known_location(db, user.id, event.country, event.city)
-            had_fail_streak = recent_fail_count >= SUCCESS_AFTER_FAIL_STREAK_MIN_FAILS
-
-            risk_score, factors = compute_risk_score(
-                baseline=baseline,
-                login_hour=login_hour,
-                is_new_location=not known_location,
-                consecutive_fail=is_brute_force_flag,
-                success_after_fail_streak=success and had_fail_streak,
-            )
-            event.risk_score = risk_score
-
-            severity = classify_severity(risk_score)
-            if severity != "low":
-                explanation = explain_factors(factors, baseline=baseline, login_hour=login_hour)
-                alert_obj = Alert(
-                    login_event_id=event.id,
-                    user_id=user.id,
-                    alert_type="high_risk_score",
-                    severity=severity,
-                    risk_score=risk_score,
-                    message=f"'{user.username}' — risk {risk_score}/100 ({severity}): {explanation}.",
-                )
-                db.add(alert_obj)
-                alert_records.append((alert_obj, {}))
-
-            # --- Tầng 3: ML, THAM KHẢO — chạy SONG SONG, không thay thế tầng 1-2 (nhiệm vụ 7.1) ---
-            # Đọc is_known_*/lịch sử TRƯỚC khi record_known_*_if_new() cập nhật
-            # bên dưới, cho đúng ý nghĩa "chưa từng thấy" (giống lúc train offline).
             ml_features = compute_realtime_features(
                 db,
                 user_id=user.id,
@@ -281,26 +158,14 @@ def _run_detection_pipeline_sync(
             ml_result = ml_model.predict(ml_features)
             if ml_result is not None:
                 event.ml_anomaly_score = ml_result["anomaly_score"]
-                if ml_result["is_anomaly"]:
-                    ml_explanation = ml_model.explain(ml_features)
-                    alert_obj = Alert(
-                        login_event_id=event.id,
-                        user_id=user.id,
-                        alert_type="ml_anomaly",
-                        severity="medium",
-                        risk_score=risk_score,
-                        message=f"ML bất thường (điểm {ml_result['anomaly_score']:.2f}, tham khảo): {ml_explanation}.",
-                    )
-                    db.add(alert_obj)
-                    alert_records.append((alert_obj, {}))
 
             if success:
                 update_baseline_after_successful_login(db, user, event)
                 record_known_device_if_new(db, user, device_fingerprint, user_agent)
                 record_known_location_if_new(db, user, event.country, event.city)
 
-        # --- MR12: rule engine v2 (MR9-10) + hybrid risk engine (MR11) — CHẠY SONG SONG tầng 1-2-3 ở trên, KHÔNG THAY
-        # THẾ. Cô lập trong try/except RIÊNG: lỗi ở đây không được làm mất alert tầng 1-2-3 đã ghi hay làm sập luồng.
+        # --- Bộ luật duy nhất (rule engine v2, MR9-10 + hành động tối thiểu MR21) + hybrid risk engine (MR11). Cô lập
+        # trong try/except RIÊNG: lỗi ở đây không được làm hỏng `event` đã ghi hay làm sập luồng đăng nhập.
         try:
             with perf.timer("hybrid"):
                 # MR20: lịch sử tài khoản (dạng tổng hợp), IP/ASN 24h và đếm toàn cục dựng MỘT lần ở đây, dùng chung cho
@@ -324,6 +189,16 @@ def _run_detection_pipeline_sync(
                 risk_result = hybrid_engine.evaluate(features, evaluation.hits, bands=user_bands, ml=ml_assessment)
                 event.hybrid_risk_score = risk_result.score
                 event.hybrid_action = risk_result.action
+                # MR21: điểm rủi ro DUY NHẤT của lần đăng nhập — cột `risk_score` (trước là điểm cộng tay của tầng 2, đã
+                # xoá) giữ cho bảng log/biểu đồ hiện có tiếp tục hiển thị; MR23 gộp hẳn hai cột.
+                event.risk_score = risk_result.score
+                # Bằng chứng toạ độ của luật di chuyển bất khả thi -> payload WebSocket để bản đồ vẽ đường nối hai điểm
+                # (trước MR21 do alert `impossible_travel` riêng của tầng 1 mang).
+                travel = next((h for h in evaluation.hits if h.rule_id == "impossible_travel"), None)
+                travel_extra = (
+                    {"previous_latitude": travel.evidence.get("previous_latitude"), "previous_longitude": travel.evidence.get("previous_longitude")}
+                    if travel is not None else {}
+                )
 
                 if risk_result.action != "allow":
                     # --- MR13: gán họ tấn công gợi ý, novelty, ưu tiên (app/detection/alert_intelligence.py — thuần, không đụng DB) ---
@@ -366,6 +241,7 @@ def _run_detection_pipeline_sync(
                     explanation = {
                         "contributions": [{"source": c.source, "label": c.label, "weight": round(c.weight, 4), "group": c.group} for c in risk_result.contributions],
                         "action": combined_action,  # mức TỆ NHẤT tính đến lần này (không phải riêng risk_result.action) — dùng lại ở lần dedup SAU
+                        "forced_by": risk_result.overridden_by,  # MR21: luật đã ép hành động tối thiểu (None nếu hành động đến từ điểm)
                     }
 
                     if existing_alert is not None:
@@ -388,11 +264,13 @@ def _run_detection_pipeline_sync(
                         )
                         db.add(hybrid_alert)
                     db.flush()
-                    alert_records.append((hybrid_alert, {}))
+                    alert_records.append((hybrid_alert, travel_extra))
 
                     # Không lặp lại ĐÚNG đề xuất cũ mỗi lần trùng — chỉ ghi thêm khi MỚI hoặc mức đề xuất đã TĂNG (vd alert -> lock).
                     if risk_result.action in ("step_up", "lock") and (existing_alert is None or escalated):
                         reasons = "; ".join(f"{c.label} ({c.weight:.0%})" for c in risk_result.contributions[:3])
+                        if risk_result.overridden_by is not None:  # MR21: nói rõ hành động đến từ luật xác định, không phải từ điểm
+                            reasons = f"luật {risk_result.overridden_by} ép mức tối thiểu '{risk_result.action}'; {reasons}"
                         response_action = ResponseAction(
                             login_event_id=event.id, alert_id=hybrid_alert.id, user_id=user_id, action=risk_result.action,
                             reason=f"Hybrid risk engine đề xuất (điểm {risk_result.score}/100): {reasons}.",
@@ -435,10 +313,25 @@ def _run_detection_pipeline_sync(
                             audit_detail["blocklist_value"] = value
 
                         db.add(AuditLog(actor="system", action=audit_action, target_type="login_event", target_id=event.id, detail=audit_detail))
-        except Exception:  # noqa: BLE001 — MR12 không bao giờ được làm mất alert tầng 1-2-3 hay làm sập luồng đăng nhập
-            logger.exception("lỗi ở khối MR12 (rule engine/hybrid) cho user_id=%s ip=%s — bỏ qua, tầng 1-2-3 không bị ảnh hưởng", user_id, ip)
+        except Exception:  # noqa: BLE001 — không bao giờ được làm hỏng `event` đã ghi hay làm sập luồng đăng nhập
+            logger.exception("lỗi ở khối luật/hybrid cho user_id=%s ip=%s — bỏ qua, lần đăng nhập vẫn được ghi", user_id, ip)
 
-        # --- MR14: tương quan chiến dịch — gom alert của BẤT KỲ tầng nào (1-3 hoặc hybrid_risk) CÙNG hạ tầng (IP hoặc
+        # --- Tầng 3: alert `ml_anomaly` (đã tính ở trên), mang điểm rủi ro DUY NHẤT của lần đăng nhập. Khối luật/hybrid
+        # lỗi thì chưa có điểm đó — ghi 0 thay vì bỏ alert (cột risk_score của alerts không được NULL).
+        if ml_result is not None and ml_result["is_anomaly"]:
+            ml_explanation = ml_model.explain(ml_features)
+            alert_obj = Alert(
+                login_event_id=event.id,
+                user_id=user.id,
+                alert_type="ml_anomaly",
+                severity="medium",
+                risk_score=event.hybrid_risk_score if event.hybrid_risk_score is not None else 0,
+                message=f"ML bất thường (điểm {ml_result['anomaly_score']:.2f}, tham khảo): {ml_explanation}.",
+            )
+            db.add(alert_obj)
+            alert_records.append((alert_obj, {}))
+
+        # --- MR14: tương quan chiến dịch — gom alert của BẤT KỲ nguồn nào (hybrid_risk hoặc ml_anomaly) CÙNG hạ tầng (IP hoặc
         # ASN) NHẮM VÀO NHIỀU TÀI KHOẢN KHÁC NHAU trong LIVE_CAMPAIGN_WINDOW thành một Campaign. Khác chống trùng lặp
         # của MR13 (chỉ gộp CÙNG một tài khoản/IP lặp lại) — ở đây là NHIỀU tài khoản chia sẻ hạ tầng. Cô lập riêng:
         # lỗi ở đây không được làm mất các alert đã tạo/commit ở trên (app/detection/campaign_correlation.py).

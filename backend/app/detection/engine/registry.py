@@ -5,10 +5,19 @@ tham số có giá trị mặc định (mỗi tham số có mô tả, đơn vị
   - danh mục luật trong docs/rule-catalog.md (`python -m app.detection.engine.catalog`, có test kiểm tra tài liệu không lỗi thời);
   - kiểm tra cấu hình (`RuleConfig`): ghi đè tham số, bật/tắt, đổi chế độ từng luật mà không sửa mã.
 
+Mọi luật khớp đều là MỘT bằng chứng có trọng số cho hybrid risk engine (`app/detection/hybrid/combine.py`): trọng số là
+độ chính xác đã hiệu chỉnh của luật (MR11) — luật ồn tự đóng góp ít. Riêng luật xác định (dấu hiệu rõ ràng, ít báo nhầm)
+còn mang `min_action` (MR21): khớp là hành động ÍT NHẤT ở mức đó (alert / step_up / lock), bất kể điểm — tổng quát hoá
+cơ chế ghi đè trước đây chỉ dành cho `blocklist_hit`.
+
 Ba chế độ (`MODES`):
-  - `enforce`: luật khớp thì tạo cảnh báo;
-  - `shadow` : luật vẫn chạy và ghi nhận kết quả (để đo tỉ lệ khớp, báo nhầm trên log thật) nhưng KHÔNG tạo cảnh báo — dùng cho luật chưa được kiểm chứng;
+  - `enforce`: bằng chứng có trọng số, và được ÉP hành động tối thiểu `min_action` (nếu luật có);
+  - `shadow` : vẫn chạy, vẫn là bằng chứng có trọng số, nhưng KHÔNG BAO GIỜ tự ép hành động — dùng cho luật chưa được
+    kiểm chứng đủ trên log thật (đo tỉ lệ khớp/báo nhầm trước khi cho phép nó tự quyết định);
   - `off`    : không chạy.
+Trước MR21 tài liệu ghi "shadow không tạo cảnh báo" — đúng với rule engine chạy riêng lúc replay, nhưng trên luồng thật
+cảnh báo chỉ do hybrid tạo nên enforce/shadow không khác gì nhau (đo ở docs/untested-behaviors-measured.md); định nghĩa
+trên là định nghĩa mới, có hiệu lực trên luồng thật.
 
 ⚠️ Ánh xạ MITRE ATT&CK là gần đúng: ATT&CK mô tả kỹ thuật của kẻ tấn công, còn luật ở đây nhận diện DẤU HIỆU của chúng trong log đăng nhập.
 """
@@ -24,7 +33,7 @@ from typing import Any, Callable, Mapping
 from app.detection.engine.context import GlobalStats
 from app.detection.engine.intel import Blocklist, ThreatIntel
 from app.detection.engine.state import WindowStore
-from app.detection.engine.types import MODES, SEVERITIES, AccountHistory, Finding, LoginAttempt
+from app.detection.engine.types import MIN_ACTIONS, MODES, SEVERITIES, AccountHistory, Finding, LoginAttempt
 
 # Kỹ thuật MITRE ATT&CK (Enterprise) được dùng trong danh mục — id -> tên
 TECHNIQUES: dict[str, str] = {
@@ -139,6 +148,7 @@ class RuleSpec:
     default_mode: str
     evaluate: Callable[[RuleContext], Finding | None]
     notes: str = ""
+    min_action: str | None = None  # MR21: hành động tối thiểu khi luật khớp ở chế độ enforce (MIN_ACTIONS), None = chỉ là bằng chứng
 
     def defaults(self) -> dict[str, Any]:
         return {p.name: p.default for p in self.params}
@@ -159,6 +169,7 @@ def rule(
     needs: tuple[str, ...] = (),
     default_mode: str = "enforce",
     notes: str = "",
+    min_action: str | None = None,
     registry: dict[str, RuleSpec] | None = None,
 ):
     """Đăng ký một luật. Kiểm tra siêu dữ liệu ngay lúc nạp module để lỗi khai báo lộ ra sớm (test nạp toàn bộ sổ)."""
@@ -171,6 +182,8 @@ def rule(
             raise ValueError(f"{id}: mức nghiêm trọng '{severity}' không hợp lệ (có: {SEVERITIES})")
         if default_mode not in MODES:
             raise ValueError(f"{id}: chế độ '{default_mode}' không hợp lệ (có: {MODES})")
+        if min_action is not None and min_action not in MIN_ACTIONS:
+            raise ValueError(f"{id}: hành động tối thiểu '{min_action}' không hợp lệ (có: {MIN_ACTIONS})")
         if category not in CATEGORIES:
             raise ValueError(f"{id}: nhóm '{category}' không nằm trong {CATEGORIES}")
         unknown = [t for t in techniques if t not in TECHNIQUES]
@@ -183,7 +196,7 @@ def rule(
             raise ValueError(f"{id}: tên tham số bị trùng")
         for p in params:  # giá trị mặc định phải hợp lệ với chính khai báo của nó
             p.coerce(p.default)
-        target[id] = RuleSpec(id, title, category, severity, techniques, description, params, needs, default_mode, fn, notes)
+        target[id] = RuleSpec(id, title, category, severity, techniques, description, params, needs, default_mode, fn, notes, min_action)
         return fn
 
     return wrap

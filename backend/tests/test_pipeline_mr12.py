@@ -1,5 +1,6 @@
-"""MR12 — tích hợp realtime: parse UA + tra ASN trong pipeline, rule engine v2 (MR9-10) + hybrid risk engine (MR11)
-CHẠY SONG SONG tầng 1-2-3 (KHÔNG THAY THẾ), lỗi ở khối MR12 không được làm mất alert tầng 1-2-3.
+"""MR12 — tích hợp realtime: parse UA + tra ASN trong pipeline, rule engine v2 (MR9-10) + hybrid risk engine (MR11).
+Ban đầu chạy SONG SONG tầng 1-2-3; từ MR21 tầng 1-2 đã gộp vào rule engine v2 (một bộ luật duy nhất) — lỗi ở khối luật/
+hybrid vẫn không được làm mất lần đăng nhập đã ghi hay làm sập request.
 
 `client` fixture (conftest.py) khiến `TestClient(app)` chạy sự kiện "startup" của `app/main.py`, TỰ ĐĂNG KÝ và TỰ NẠP
 mô hình hybrid thật (artifact có sẵn trên đĩa) vào DB TEST (SQLite, nhờ monkeypatch `app.main.SessionLocal`) — nên mọi
@@ -59,10 +60,9 @@ def test_login_computes_a_hybrid_score_and_action_using_the_real_model(client, d
 
 
 def test_a_brute_force_burst_computes_a_valid_score_without_crashing(client, db_session):
-    """Không ép buộc phải VƯỢT ngưỡng `alert` — MR11 hiệu chỉnh trọng số `brute_force` khá thấp khi đứng một mình (đo
-    được ~10% trên val, xem docs/hybrid-risk-engine.md), nên vài lần sai từ một IP/thiết bị đã quen không nhất thiết đủ
-    để báo động (đúng như thiết kế: không phải chỉ cần MỘT luật yếu khớp là báo ngay). Test này chỉ đảm bảo pipeline
-    chạy hết, không sập, và điểm luôn hợp lệ — kịch bản CHẮC CHẮN vượt ngưỡng dùng blocklist ở test dưới."""
+    """Chỉ đảm bảo pipeline chạy hết, không sập, và điểm luôn hợp lệ với mô hình thật đã nạp. Trọng số `brute_force` khi
+    đứng một mình chỉ ~10% (docs/hybrid-risk-engine.md); từ MR21 luật này mang hành động tối thiểu `alert` nên 5 lần sai
+    trở đi luôn có cảnh báo — kiểm riêng, không lẫn điểm mô hình, ở tests/test_pipeline_mr21.py."""
     _create_user(db_session, "alice")
     for _ in range(8):
         response = client.post("/login", json={"username": "alice", "password": "SaiMatKhau"}, headers={"user-agent": CHROME_UA})
@@ -73,7 +73,8 @@ def test_a_brute_force_burst_computes_a_valid_score_without_crashing(client, db_
 
 
 def test_a_blocklisted_ip_deterministically_locks_and_the_pipeline_executes_it(db_session):
-    """`blocklist_hit` GHI ĐÈ (MR11: điểm 100, hành động `lock`) bất kể hiệu chỉnh trọng số/ML cụ thể — kịch bản DUY NHẤT
+    """`blocklist_hit` mang hành động tối thiểu `lock` (MR21; trước đó là cơ chế "ghi đè" riêng của MR11 cho điểm 100) —
+    `lock` bất kể hiệu chỉnh trọng số/ML cụ thể, điểm hiển thị được nâng lên ngưỡng `lock_at` của hồ sơ đang dùng. Kịch bản
     chắc chắn tái lập được hành động `lock` mà không phụ thuộc số liệu hiệu chỉnh có thể đổi sau này.
 
     Gọi THẲNG `run_detection_pipeline` (không qua HTTP/`app/routers/auth.py`), giống `test_asn_is_looked_up_for_a_real_public_ip`
@@ -87,14 +88,17 @@ def test_a_blocklisted_ip_deterministically_locks_and_the_pipeline_executes_it(d
     result = asyncio.run(
         run_detection_pipeline(username="alice", user_id=user.id, success=True, ip="203.0.113.66", user_agent=CHROME_UA, timestamp=datetime.now(timezone.utc))
     )
-    assert result.hybrid_action == "lock" and result.hybrid_risk_score == 100
+    lock_at = hybrid_runtime.get_engine().profile.bands.lock_at
+    assert result.hybrid_action == "lock" and result.hybrid_risk_score >= lock_at
 
     event = db_session.query(LoginEvent).order_by(LoginEvent.id.desc()).first()
-    assert event.hybrid_risk_score == 100 and event.hybrid_action == "lock"
+    assert event.hybrid_risk_score == result.hybrid_risk_score and event.hybrid_action == "lock"
+    assert event.risk_score == event.hybrid_risk_score  # MR21: một điểm rủi ro duy nhất cho mỗi lần đăng nhập
 
     hybrid_alert = db_session.query(Alert).filter(Alert.alert_type == "hybrid_risk").order_by(Alert.id.desc()).first()
     assert hybrid_alert is not None and hybrid_alert.rule_id == "blocklist_hit" and hybrid_alert.status == "open"
     assert hybrid_alert.explanation is not None and any(c["source"] == "blocklist_hit" for c in hybrid_alert.explanation["contributions"])
+    assert hybrid_alert.explanation["forced_by"] == "blocklist_hit"  # MR21: ghi rõ luật nào ép hành động
 
     # MR16: hành động lock giờ được THỰC THI thật (không còn dừng ở "recommended" như MR12) — khoá TÀI KHOẢN (alice
     # tồn tại) chứ không phải IP, dù chính mục chặn IP là thứ khiến rule khớp (xem lock_kind_and_value, response_execution.py).
@@ -110,24 +114,25 @@ def test_a_blocklisted_ip_deterministically_locks_and_the_pipeline_executes_it(d
     assert new_block.expires_at is not None  # khoá tạm CÓ hạn (LOCK_TTL), khác mục chặn IP thủ công (vĩnh viễn) ở trên
 
 
-def test_a_broken_mr12_block_never_loses_the_tier1_brute_force_alert(client, db_session, monkeypatch):
-    """Hỏng có chủ đích ở bước MR12 (rule engine v2 + hybrid) — cảnh báo brute_force của TẦNG 1 (rate_counter.py, có
-    trước MR9-12) vẫn phải được tạo bình thường, và request vẫn phải trả lời (không sập luồng)."""
+def test_a_broken_rule_block_still_records_every_login_and_answers_the_request(client, db_session, monkeypatch):
+    """Hỏng có chủ đích ở khối luật/hybrid. Trước MR21 test này kiểm "alert brute_force của TẦNG 1 vẫn còn làm dự phòng";
+    tầng 1 đã gộp vào rule engine v2 (MR21) nên không còn đường dự phòng đó — đánh đổi có chủ đích, ghi ở docstring
+    `app/detection/pipeline.py`. Điều PHẢI giữ: request vẫn trả lời, mọi lần thử vẫn được ghi, các cột điểm để NULL
+    (không nửa vời) thay vì sập luồng đăng nhập."""
 
     def boom(*args, **kwargs):
-        raise RuntimeError("lỗi giả lập trong khối MR12")
+        raise RuntimeError("lỗi giả lập trong khối luật/hybrid")
 
     monkeypatch.setattr("app.detection.pipeline.build_rule_engine", boom)
     _create_user(db_session, "alice")
-    for _ in range(6):  # BRUTE_FORCE_THRESHOLD (tầng 1, rules.py) = 5
+    for _ in range(6):
         response = client.post("/login", json={"username": "alice", "password": "SaiMatKhau"}, headers={"user-agent": CHROME_UA})
         assert response.status_code == 401
 
-    tier1_alerts = db_session.query(Alert).filter(Alert.alert_type == "brute_force").all()
-    assert tier1_alerts, "alert tầng 1 (brute_force) phải vẫn được tạo dù khối MR12 luôn raise"
-    assert db_session.query(Alert).filter(Alert.alert_type == "hybrid_risk").count() == 0  # MR12 hỏng: không có alert nào từ đó
+    assert db_session.query(LoginEvent).count() == 6
+    assert db_session.query(Alert).filter(Alert.alert_type == "hybrid_risk").count() == 0  # khối hỏng: không có alert nào từ đó
     last_event = db_session.query(LoginEvent).order_by(LoginEvent.id.desc()).first()
-    assert last_event.hybrid_risk_score is None and last_event.hybrid_action is None  # cột MR12 vẫn NULL, không nửa vời
+    assert last_event.hybrid_risk_score is None and last_event.hybrid_action is None and last_event.risk_score is None
 
 
 def test_ml_component_degrades_gracefully_when_the_engine_has_no_model_loaded(client, db_session, monkeypatch):

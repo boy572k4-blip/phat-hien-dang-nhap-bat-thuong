@@ -3,7 +3,11 @@ import { useEffect, useState } from "react";
 import { apiClient } from "../services/api";
 import "./RulesPage.css";
 
-const MODE_LABELS = { enforce: "Bật (tạo cảnh báo)", shadow: "Theo dõi (không tạo cảnh báo)", off: "Tắt" };
+// MR21: mọi luật đang chạy (Bật hoặc Theo dõi) đều góp bằng chứng có trọng số vào điểm rủi ro; chỉ luật "Bật" mới được
+// ÉP hành động tối thiểu của nó (min_action). Trước MR21 nhãn ghi "Theo dõi (không tạo cảnh báo)" — không đúng với luồng
+// thật, nơi cảnh báo chỉ do điểm hybrid quyết định (docs/untested-behaviors-measured.md).
+const MODE_LABELS = { enforce: "Bật", shadow: "Theo dõi (không tự ép hành động)", off: "Tắt" };
+const MIN_ACTION_LABELS = { alert: "cảnh báo", step_up: "xác thực thêm (OTP)", lock: "khoá tạm" };
 
 function paramInput(param, value, onChange) {
   if (param.kind === "bool") {
@@ -120,6 +124,11 @@ export default function RulesPage() {
                   <div className="rule-card__header">
                     <h3>{rule.title}</h3>
                     <span className={`rule-card__severity rule-card__severity--${rule.severity}`}>{rule.severity}</span>
+                    {rule.min_action && (
+                      <span className="rule-card__min-action" title="Khớp ở chế độ Bật thì hành động ít nhất là mức này, bất kể điểm rủi ro">
+                        tối thiểu: {MIN_ACTION_LABELS[rule.min_action] ?? rule.min_action}
+                      </span>
+                    )}
                     {rule.is_overridden && <span className="rule-card__overridden-badge">đã tuỳ chỉnh</span>}
                   </div>
                   <p className="rule-card__description">{rule.description}</p>

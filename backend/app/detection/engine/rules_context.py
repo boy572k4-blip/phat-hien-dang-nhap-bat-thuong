@@ -9,10 +9,11 @@ from app.detection.engine import indexes as K
 from app.detection.engine.messages import window_text
 from app.detection.engine.registry import Param, RuleContext, rule
 from app.detection.engine.types import Finding
-from app.detection.rules import IMPOSSIBLE_TRAVEL_SPEED_KMH, haversine_distance
+from app.utils.geo import haversine_distance
 
 CATEGORY = "Ngữ cảnh tài khoản"
 _DAY = 86_400
+IMPOSSIBLE_TRAVEL_SPEED_KMH = 900.0  # lấy nguyên văn từ checklist gốc mục 3.3 (luật tầng 1 Tuần 3)
 
 
 @rule(
@@ -24,7 +25,12 @@ _DAY = 86_400
     description="Hai lần đăng nhập liên tiếp của một tài khoản cách nhau quá xa so với thời gian trôi qua (tốc độ vượt ngưỡng của máy bay).",
     params=(Param("max_speed_kmh", IMPOSSIBLE_TRAVEL_SPEED_KMH, "tốc độ di chuyển tối đa hợp lý", "km/h", 100.0, 20_000.0),),
     needs=("account", "geo", "history"),
-    notes="Luật tầng 1 gốc (ngưỡng 900 km/h lấy nguyên văn từ checklist). Bỏ qua khi thiếu GeoIP ở một trong hai lần. VPN/proxy làm sai lệch vị trí. Không chạy được trên RBA (không có toạ độ).",
+    min_action="alert",
+    notes=(
+        "Luật tầng 1 gốc (ngưỡng 900 km/h lấy nguyên văn từ checklist). Bỏ qua khi thiếu GeoIP ở một trong hai lần. VPN/proxy làm sai lệch vị trí. "
+        "Không chạy được trên RBA (không có toạ độ) nên trọng số hybrid chỉ là mặc định 5% — hành động tối thiểu `alert` (MR21, tạm thời — chốt ở "
+        "MR25) giữ cho luật tự cảnh báo được như cảnh báo riêng của tầng 1 trước đây."
+    ),
 )
 def impossible_travel(ctx: RuleContext) -> Finding | None:
     a, h, p = ctx.attempt, ctx.history, ctx.p

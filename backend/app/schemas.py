@@ -231,6 +231,7 @@ class RuleOut(BaseModel):
     needs: list[str]
     default_mode: str
     mode: str  # HIỆU LỰC hiện tại (override nếu có, default_mode nếu không)
+    min_action: str | None = None  # MR21: hành động tối thiểu khi luật khớp ở chế độ enforce (alert/step_up/lock), None = chỉ là bằng chứng
     is_overridden: bool
     params: list[RuleParamOut]
     updated_by: str | None = None

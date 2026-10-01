@@ -21,7 +21,8 @@ from app.detection.engine.registry import CATEGORIES, NEEDS, REGISTRY, TECHNIQUE
 
 DOC_PATH = Path(__file__).resolve().parents[4] / "docs" / "rule-catalog.md"
 SEVERITY_VI = {"low": "thấp", "medium": "trung bình", "high": "cao"}
-MODE_VI = {"enforce": "enforce (tạo cảnh báo)", "shadow": "shadow (chỉ ghi nhận)", "off": "off"}
+MODE_VI = {"enforce": "enforce (bằng chứng + được ép hành động tối thiểu)", "shadow": "shadow (bằng chứng, không tự ép hành động)", "off": "off"}
+MIN_ACTION_VI = {"alert": "`alert` (cảnh báo)", "step_up": "`step_up` (xác thực thêm)", "lock": "`lock` (khoá tạm)"}
 
 
 def fmt_value(value: Any) -> str:
@@ -58,6 +59,7 @@ def render(registry: Mapping[str, RuleSpec] | None = None) -> str:
     for spec in specs:
         by_category[spec.category].append(spec)
     shadow = [s.id for s in specs if s.default_mode == "shadow"]
+    forcing = [s for s in specs if s.min_action is not None]
 
     lines = [
         "# Danh mục luật (rule engine v2)",
@@ -69,15 +71,17 @@ def render(registry: Mapping[str, RuleSpec] | None = None) -> str:
         "## 1. Tổng quan",
         "",
         f"**{len(specs)} luật** trong {len(by_category)} nhóm; {len(specs) - len(shadow)} luật mặc định ở chế độ `enforce`, {len(shadow)} ở chế độ `shadow` "
-        f"({', '.join(f'`{i}`' for i in shadow)}) vì chưa được kiểm chứng trên log thật hoặc dễ báo nhầm.",
+        f"({', '.join(f'`{i}`' for i in shadow)}) vì chưa được kiểm chứng trên log thật hoặc dễ báo nhầm. "
+        f"{len(forcing)} luật xác định mang **hành động tối thiểu** ({', '.join(f'`{s.id}`' for s in forcing)}).",
         "",
-        "| Mã | Tên | Nhóm | Mức | Chế độ mặc định | MITRE ATT&CK |",
-        "|---|---|---|---|---|---|",
+        "| Mã | Tên | Nhóm | Mức | Chế độ mặc định | Hành động tối thiểu | MITRE ATT&CK |",
+        "|---|---|---|---|---|---|---|",
     ]
     for category in CATEGORIES:
         for spec in by_category.get(category, []):
             techniques = ", ".join(spec.techniques) if spec.techniques else "—"
-            lines.append(f"| [`{spec.id}`](#{spec.id}) | {spec.title} | {spec.category} | {SEVERITY_VI[spec.severity]} | {spec.default_mode} | {techniques} |")
+            min_action = f"`{spec.min_action}`" if spec.min_action else "—"
+            lines.append(f"| [`{spec.id}`](#{spec.id}) | {spec.title} | {spec.category} | {SEVERITY_VI[spec.severity]} | {spec.default_mode} | {min_action} | {techniques} |")
 
     lines += [
         "",
@@ -86,9 +90,11 @@ def render(registry: Mapping[str, RuleSpec] | None = None) -> str:
         "- **Đầu vào duy nhất** của mọi luật là `LoginAttempt` (một lần thử đăng nhập đã chuẩn hoá: thời điểm SỰ KIỆN, tên đăng nhập, kết quả, IP, ASN, quốc gia, toạ độ, User-Agent...) và lịch sử tài khoản. Luồng thật (MR12), replay log lịch sử và test đều gọi cùng `RuleEngine.evaluate`; luật không biết dữ liệu đến từ đâu và **không bao giờ đọc nhãn** (`labels`) của log replay.",
         "- **Thời gian là thời gian của sự kiện**, không phải giờ hệ thống: replay log năm 2020 cho đúng kết quả của năm 2020. Cửa sổ là (đầu, hiện tại] — sự kiện đúng bằng đầu cửa sổ không được tính.",
         "- **Trạng thái cửa sổ thời gian** (đếm lần sai, đếm tên/IP/User-Agent khác nhau...) nằm ở `WindowStore`: `MemoryStore` cho replay và test, `RedisStore` cho luồng thật; một bộ test chung chứng minh hai cài đặt cùng hợp đồng và cho cùng kết quả trên lưu lượng ngẫu nhiên. Chi phí mỗi sự kiện bị chặn bởi ngưỡng, không tăng theo độ dài cửa sổ.",
-        "- **Ba chế độ** cho mỗi luật: `enforce` (khớp thì tạo cảnh báo), `shadow` (vẫn chạy và ghi nhận để đo tỉ lệ khớp/báo nhầm nhưng KHÔNG tạo cảnh báo), `off` (không chạy).",
+        "- **Luật khớp là bằng chứng có trọng số** cho hybrid risk engine ([`hybrid-risk-engine.md`](hybrid-risk-engine.md)): trọng số là độ chính xác đã hiệu chỉnh của luật, nên luật ồn tự đóng góp ít. **Luật xác định mang hành động tối thiểu** (MR21): khớp ở chế độ `enforce` thì hành động ít nhất là mức đó (`alert` < `step_up` < `lock`) bất kể điểm — tổng quát hoá cơ chế ghi đè trước đây chỉ dành cho `blocklist_hit`. Mức hiện tại là TẠM THỜI, chốt ở MR25 bằng số đo báo nhầm.",
+        "- **Ba chế độ** cho mỗi luật: `enforce` (bằng chứng + được ép hành động tối thiểu), `shadow` (vẫn chạy, vẫn là bằng chứng có trọng số, nhưng KHÔNG BAO GIỜ tự ép hành động — luật chưa kiểm chứng đủ trên log thật), `off` (không chạy).",
+        "- **Một bộ luật duy nhất** (MR21): tầng 1 (ba luật đếm Redis riêng, Tuần 3) và bảng cộng điểm tay của tầng 2 (Tuần 4) đã xoá; ánh xạ từng thành phần cũ sang luật ở đây: [`rule-unification.md`](rule-unification.md).",
         "- **Thiếu dữ liệu ≠ báo động:** luật cần dữ liệu mà lần thử không có (ví dụ chưa có file GeoLite2-ASN) bị **bỏ qua** và `Evaluation.skipped` ghi lý do; luật gặp lỗi được ghi ở `Evaluation.errors` và không ảnh hưởng luật khác hay luồng đăng nhập.",
-        "- **Thông điệp** ngắn tiếng Việt cùng phong cách chuỗi cảnh báo hiện có; ba luật gốc (`brute_force`, `credential_stuffing`, `impossible_travel`) giữ đúng chuỗi và ngưỡng mặc định của luật tầng 1 cũ.",
+        "- **Thông điệp** ngắn tiếng Việt cùng phong cách chuỗi cảnh báo hiện có; ba luật gốc (`brute_force`, `credential_stuffing`, `impossible_travel`) giữ đúng chuỗi và ngưỡng mặc định của luật tầng 1 cũ (đã xoá ở MR21).",
         "- ⚠️ Ánh xạ MITRE ATT&CK là **gần đúng**: ATT&CK mô tả kỹ thuật của kẻ tấn công, còn luật nhận diện dấu hiệu của chúng trong log đăng nhập.",
         "",
         "### Cấu hình",
@@ -129,7 +135,8 @@ def render(registry: Mapping[str, RuleSpec] | None = None) -> str:
                 "",
                 spec.description,
                 "",
-                f"- **Mức nghiêm trọng:** {SEVERITY_VI[spec.severity]} · **chế độ mặc định:** {MODE_VI[spec.default_mode]}",
+                f"- **Mức nghiêm trọng:** {SEVERITY_VI[spec.severity]} · **chế độ mặc định:** {MODE_VI[spec.default_mode]}"
+                + (f" · **hành động tối thiểu:** {MIN_ACTION_VI[spec.min_action]}" if spec.min_action else ""),
                 f"- **MITRE ATT&CK:** " + (", ".join(f"{t} ({TECHNIQUES[t]})" for t in spec.techniques) if spec.techniques else "không ánh xạ kỹ thuật cụ thể"),
                 "- **Dữ liệu cần:** " + (", ".join(f"`{n}`" for n in spec.needs) if spec.needs else "không (chỉ cần `LoginAttempt`)"),
             ]

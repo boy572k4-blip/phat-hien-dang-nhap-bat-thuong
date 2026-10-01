@@ -29,13 +29,16 @@ function FitBoundsOnChange({ bounds }) {
   return null;
 }
 
-// Khu vực bản đồ (nhiệm vụ 3.4) — vẽ điểm + đường nối khi nhận cảnh báo
-// impossible_travel qua WebSocket real-time (nhiệm vụ 5.3).
+// Khu vực bản đồ (nhiệm vụ 3.4) — vẽ điểm + đường nối khi nhận qua WebSocket
+// real-time (nhiệm vụ 5.3) một cảnh báo có kèm toạ độ điểm đăng nhập TRƯỚC.
+// MR21: không còn alert `impossible_travel` riêng (tầng 1 đã gộp vào rule engine
+// v2) — cảnh báo hybrid mang toạ độ đó khi luật di chuyển bất khả thi khớp, nên
+// chỉ cần xét có toạ độ hay không, không xét loại cảnh báo.
 export default function MapPanel({ latestAlert }) {
   const [travelLine, setTravelLine] = useState(null);
 
   useEffect(() => {
-    if (!latestAlert || latestAlert.alert_type !== "impossible_travel") return;
+    if (!latestAlert) return;
     const { previous_latitude, previous_longitude, latitude, longitude } = latestAlert;
     if (previous_latitude == null || previous_longitude == null || latitude == null || longitude == null) return;
 
