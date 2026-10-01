@@ -67,6 +67,37 @@ Liệt kê TRUNG THỰC — đây là những gì hệ thống **chưa** làm t�
 7. **7/9 kịch bản MR18 không dịch được sang dữ liệu tầng 3** (không có đặc trưng IP/ASN/tốc độ ở `ml/features.py`) —
    tầng 3 chỉ "thấy" được phần hành vi địa lý/thời gian của một cuộc tấn công, không thấy phần hạ tầng/tốc độ.
 
+## Cập nhật sau MR19: đã đo 7 hành vi "chưa đo" và rà lại toàn bộ trọng số
+
+Đo trực tiếp qua pipeline thật ([`untested-behaviors-measured.md`](untested-behaviors-measured.md), mã
+[`scripts/measure_untested_behaviors.py`](../backend/scripts/measure_untested_behaviors.py)) cho `bot_user_agent`,
+`regular_rhythm`, `tor_exit`, `datacenter_ip`, `vpn_ip`, `multi_context_simultaneous`, `country_hop`: **cả 7 luật khớp
+đúng logic, nhưng không luật nào tự tạo được cảnh báo** — trọng số hybrid 5% (mặc định, chưa hiệu chỉnh) hoặc 0,0%
+(hiệu chỉnh trên mẫu val rất nhỏ). `success_after_failures` khớp trên luồng thật qua trình duyệt
+([`e2e-test-report-v2.md`](e2e-test-report-v2.md) TC1-TC2) và được **tầng 2 tự cảnh báo** (+50 điểm) dù luật v2 đóng
+góp 0%.
+
+**Rà lại trọng số toàn bộ 19 luật** (`app/detection/hybrid/profiles/rba_calibrated.json`): trong hybrid risk engine,
+chỉ **MỘT** luật (`credential_stuffing`, 34,6%) đủ một mình vượt `alert_at=32`. 10 luật dùng trọng số mặc định 5% vì
+RBA không đo được chúng (IP giả, không toạ độ, gần như không có UA bot — kể cả `impossible_travel`; `blocklist_hit`
+cũng 5% nhưng là luật GHI ĐÈ nên trọng số không quan trọng), 4 luật hiệu chỉnh ra 0,0% do mẫu val quá nhỏ, 4 luật còn
+lại hiệu chỉnh được nhưng thấp (`password_spray_slow` 10,2%, `brute_force` 10,1%, `rare_network_login` 2,6%,
+`dormant_account_login` 2,5%). Phát hiện "vững" thật sự đến từ tầng 1 (tự cảnh báo độc lập), tầng 2, tầng 3, mô
+hình `hybrid_cp2` và luật ghi đè `blocklist_hit` — không đến từ trọng số luật trong hybrid.
+
+Tổng hợp lại 25 hành vi theo "có cảnh báo thật khi kiểm chứng, nhờ tín hiệu nào":
+
+| Nhóm | Số | Hành vi |
+|---|---|---|
+| Vững (tín hiệu của chính nó đủ cảnh báo, đã đo) | **10** | dò 1 tài khoản, nhồi thông tin, thành công sau chuỗi sai (tầng 2), blocklist, di chuyển bất khả thi, tài khoản ngủ đông (tầng 3), giờ lạ, vị trí lạ, thiết bị lạ (yếu), chiếm tài khoản thật |
+| Phụ thuộc hoàn cảnh (có cảnh báo nhưng nhờ tín hiệu khác) | **6** | rải mật khẩu chậm (chỉ qua `ml_anomaly`), botnet phân tán, client kịch bản, xoay UA, nhịp đều như máy, nhiều quốc gia cùng lúc |
+| Không cảnh báo | **8** | dò danh sách tài khoản, bot UA, Tor, datacenter, VPN, thử từ nhiều quốc gia, proxy IP hiếm cùng nước, đăng nhập dồn dập |
+| Mơ hồ có chủ đích | **1** | `targeted_mimic` |
+
+⚠️ Bản tóm tắt trước đó (nói miệng, ngoài tài liệu) xếp 11 hành vi vào nhóm "vững" — rà lại trọng số cho thấy
+`password_spray_slow` (10,2%, chỉ phát hiện qua `ml_anomaly`) và `scripted_client` (5%) không tự cảnh báo được, còn
+`success_after_failures` thì có (qua tầng 2). Số đúng là **10**.
+
 ## Nguồn dữ liệu
 
 Mọi con số trong bảng lấy TRỰC TIẾP từ tài liệu đã dẫn — không tính lại riêng cho bảng này. `[Đo được thật]` nghĩa là
