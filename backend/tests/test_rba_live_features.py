@@ -1,5 +1,6 @@
 """MR12 — app/detection/rba_live_features.py: dựng HistorySummary từ DB (SQLite test), đúng quy ước "chỉ tính TRƯỚC sự
-kiện" của ml/rba/features.py, cache đếm toàn cục có TTL, không bao giờ raise ra ngoài `compute_rba_features`."""
+kiện" của ml/rba/features.py, cache đếm toàn cục có TTL (MR20: dùng chung, có khoá, mốc cắt lùi cho request lệch thứ
+tự), không bao giờ raise ra ngoài `compute_rba_features`. So khớp từng đặc trưng với đặc tả: tests/test_login_context.py."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -36,7 +37,7 @@ def test_event_record_for_carries_every_field_and_a_matching_ts_us(db_session):
     assert rec.ts_us == to_us(BASE + timedelta(minutes=5))
 
 
-def test_user_events_only_include_the_same_user_strictly_before(db_session):
+def test_user_history_only_includes_the_same_user_strictly_before(db_session):
     user = _user(db_session)
     other = _user(db_session, "bob")
     _mk(db_session, minutes=0, user_id=user.id)
@@ -44,15 +45,16 @@ def test_user_events_only_include_the_same_user_strictly_before(db_session):
     current = _mk(db_session, minutes=2, user_id=user.id)
 
     summary = build_history_summary(db_session, event_record_for(current))
-    assert summary.user_events is not None and len(summary.user_events) == 1  # chỉ dòng phút 0, không phải của bob, không phải chính nó
-    assert summary.user_events[0].ts_us == to_us(BASE)
+    assert summary.user is not None and summary.user.n_attempts == 1  # chỉ dòng phút 0, không phải của bob, không phải chính nó
+    assert summary.user.first_ts_us == summary.user.last_ts_us == to_us(BASE)
+    assert summary.user.attempts_1h == summary.user.attempts_24h == 1
 
 
 def test_unknown_username_has_no_user_history_but_still_has_ip_and_global_history(db_session):
     _mk(db_session, minutes=0, user_id=None, ip="9.9.9.9")
     current = _mk(db_session, minutes=1, user_id=None, ip="9.9.9.9")
     summary = build_history_summary(db_session, event_record_for(current))
-    assert summary.user_events is None and len(summary.ip_events) == 1
+    assert summary.user is None and summary.ip.attempts_24h == 1 and summary.ip.unknown_attempts_24h == 1
 
 
 def test_ip_events_respect_the_24h_window_and_ip_prior_attempts_all_does_not(db_session):
@@ -64,20 +66,21 @@ def test_ip_events_respect_the_24h_window_and_ip_prior_attempts_all_does_not(db_
     db_session.flush()
 
     summary = build_history_summary(db_session, event_record_for(current))
-    assert len(summary.ip_events) == 1  # chỉ dòng phút 120 còn trong 24h; dòng đầu (phút 0, cách 25h) đã ngoài cửa sổ
-    assert summary.ip_prior_attempts_all == 2  # nhưng "mọi thời điểm" vẫn đếm cả hai
+    assert summary.ip.attempts_24h == 1  # chỉ dòng phút 120 còn trong 24h; dòng đầu (phút 0, cách 25h) đã ngoài cửa sổ
+    assert summary.ip.attempts_all == 2  # nhưng "mọi thời điểm" vẫn đếm cả hai
     assert old.id  # tránh cảnh báo biến không dùng
 
 
-def test_asn_events_are_empty_without_an_asn_and_scoped_to_24h_when_present(db_session):
+def test_asn_stats_are_absent_without_an_asn_and_scoped_to_24h_when_present(db_session):
     _mk(db_session, minutes=0, asn=64500)
     with_asn = LoginEvent(user_id=None, attempted_username="x", success=True, ip_address="1.1.1.1", asn=64500, user_agent="ua", is_synthetic=True, created_at=BASE + timedelta(minutes=30))
     without_asn = LoginEvent(user_id=None, attempted_username="y", success=True, ip_address="1.1.1.2", asn=None, user_agent="ua", is_synthetic=True, created_at=BASE + timedelta(minutes=30))
     db_session.add_all([with_asn, without_asn])
     db_session.flush()
 
-    assert len(build_history_summary(db_session, event_record_for(with_asn)).asn_events) == 1
-    assert build_history_summary(db_session, event_record_for(without_asn)).asn_events == []
+    asn = build_history_summary(db_session, event_record_for(with_asn)).asn
+    assert asn.attempts_24h == 1 and asn.distinct_ips_24h == 1 and asn.attempts_all is None  # ASN không đếm toàn bộ lịch sử
+    assert build_history_summary(db_session, event_record_for(without_asn)).asn is None
 
 
 def test_global_counts_only_include_successful_real_account_logins_strictly_before(db_session):
@@ -95,22 +98,61 @@ def test_global_counts_only_include_successful_real_account_logins_strictly_befo
 def test_global_counts_cache_is_reused_within_the_ttl_and_refreshed_after(db_session):
     user = _user(db_session)
     _mk(db_session, minutes=0, user_id=user.id, success=True)
-    cache = GlobalCountsCache(ttl_seconds=1000.0)
+    cache = GlobalCountsCache(ttl_seconds=1000.0, out_of_order_seconds=5.0)
     before = BASE + timedelta(minutes=5)
     first = cache.get(db_session, before)
     _mk(db_session, minutes=1, user_id=user.id, success=True)  # thêm một dòng thành công mới, VẪN TRƯỚC `before`
     assert cache.get(db_session, before) is first  # cùng mốc, còn trong TTL: KHÔNG quét lại, vẫn thấy 1
-    assert first.total == 1
+    assert first.total == 1 and cache.refreshes == 1
 
     cache.invalidate()
     refreshed = cache.get(db_session, before)
     assert refreshed is not first and refreshed.total == 2  # sau invalidate: quét lại, thấy cả hai
 
-    later = cache.get(db_session, before + timedelta(seconds=1))
-    assert later is refreshed  # mốc cache (before) vẫn <= mốc mới hỏi và trong TTL: an toàn để dùng lại
+    assert cache.get(db_session, before + timedelta(seconds=1)) is refreshed  # mốc cắt vẫn trước mốc mới hỏi, trong TTL: dùng lại
+    # Lần thử ĐẾN MUỘN một chút (request đồng thời): mốc cắt đã lùi 5 giây khi làm mới nên vẫn dùng chung được.
+    assert cache.get(db_session, before - timedelta(seconds=4)) is refreshed
+    # Sớm hơn mốc cắt: bản đếm có thể chứa dòng SAU lần thử đó (thừa) — không được dùng, phải tính lại.
+    assert cache.get(db_session, before - timedelta(seconds=6)) is not refreshed and cache.refreshes == 3
 
-    earlier = cache.get(db_session, before - timedelta(seconds=1))
-    assert earlier is not refreshed  # mốc cache SAU mốc đang hỏi: không an toàn (có thể thừa), phải tính lại
+
+def test_global_counts_never_include_rows_at_or_after_the_cutoff_even_inside_the_margin(db_session):
+    """Mốc cắt lùi 5 giây: dòng thành công 3 giây trước lần thử CHƯA được đếm (thiếu, chấp nhận được), còn chính lần thử
+    và dòng sau nó thì không bao giờ được đếm."""
+    user = _user(db_session)
+    current_ts = BASE + timedelta(minutes=10)
+    for offset_s in (-3, 0, 2):
+        db_session.add(LoginEvent(user_id=user.id, attempted_username="alice", success=True, ip_address="1.1.1.1", user_agent="ua", is_synthetic=True, created_at=current_ts + timedelta(seconds=offset_s)))
+    _mk(db_session, minutes=0, user_id=user.id, success=True)
+    db_session.flush()
+    assert GlobalCountsCache(out_of_order_seconds=5.0).get(db_session, current_ts).total == 1  # chỉ dòng phút 0
+    assert GlobalCountsCache(out_of_order_seconds=0.0).get(db_session, current_ts).total == 2  # không lùi: thêm dòng -3 giây
+
+
+def test_global_counts_cache_lets_only_one_thread_refresh_at_a_time(monkeypatch):
+    """10 luồng cùng hỏi khi bộ đếm hết hạn: chỉ MỘT luồng quét bảng, các luồng còn lại chờ rồi dùng CHÍNH kết quả đó."""
+    import threading
+    import time
+
+    from ml.rba.features import GlobalCounts
+
+    calls = []
+
+    def slow_compute(db, cutoff):
+        calls.append(cutoff)
+        time.sleep(0.05)
+        return GlobalCounts(total=len(calls))
+
+    cache = GlobalCountsCache()
+    monkeypatch.setattr(cache, "_compute", slow_compute)
+    results = []
+    threads = [threading.Thread(target=lambda: results.append(cache.get(None, BASE))) for _ in range(10)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(calls) == 1 and cache.refreshes == 1
+    assert len(results) == 10 and all(r is results[0] for r in results)
 
 
 def test_compute_rba_features_returns_all_50_names_and_is_consistent_with_the_pure_spec(db_session):
@@ -145,7 +187,7 @@ def test_build_features_and_summary_returns_both_and_matches_the_separate_calls(
 
     features, summary = build_features_and_summary(db_session, event_record_for(current_a))
     assert features == compute_rba_features(db_session, event_record_for(current_b))
-    assert summary is not None and summary.user_events is not None and len(summary.user_events) == 1
+    assert summary is not None and summary.user is not None and summary.user.n_attempts == 1
 
 
 def test_build_features_and_summary_returns_none_none_instead_of_raising_on_error(db_session, monkeypatch):

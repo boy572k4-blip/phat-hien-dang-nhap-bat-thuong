@@ -111,8 +111,9 @@ lệch nhẹ giữa các lần chạy; xem caveat cụ thể ở từng tài li�
 
 ```bash
 pytest -q                                          # toàn bộ, không cần Docker (SQLite in-memory + fakeredis)
-python -m scripts.benchmark_login --n 50           # độ trễ tuần tự — docs/performance.md
-python -m scripts.benchmark_login --n 50 --concurrency 5   # độ trễ có tải
+python -m scripts.benchmark_login --n 50           # độ trễ tuần tự, tài khoản MỚI tạo cho lần chạy — docs/performance.md
+python -m scripts.benchmark_login --n 100 --concurrency 10   # 10 request đồng thời (MR20)
+python -m scripts.benchmark_login --n 50 --username alice --password CorrectHorse123   # tài khoản có lịch sử dài
 python -m scripts.soak_test --minutes 15           # tải nhẹ liên tục, tìm suy giảm theo thời gian — docs/soak-test.md (MR19)
 ```
 

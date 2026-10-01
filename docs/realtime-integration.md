@@ -14,13 +14,18 @@ SONG SONG** tầng 1 (rule cũ), tầng 2 (risk score) và tầng 3 (ML cũ) —
 2. **Rule engine v2** (`app/detection/rule_engine_runtime.build_rule_engine`): dựng một `RuleEngine` (MR9) cho MỖI lần
    chấm — trạng thái cửa sổ thời gian (đếm lần sai, IP/UA khác nhau...) nằm trong REDIS THẬT (`RedisStore`, dùng
    chung kết nối với `rate_counter.py`, khoá tiền tố `rule:` không đụng nhau — bền qua restart); lịch sử tài khoản
-   (`DbAccountHistory`) và thống kê ASN toàn cục (`DbGlobalStats`) DỰNG LẠI TỪ DB mỗi lần gọi thay vì giữ trong bộ nhớ
-   tiến trình — luôn đúng dù chạy nhiều worker hay vừa restart, đổi lại tốn vài truy vấn DB mỗi lần (đo ở mục 4).
-   Blocklist (bảng `blocklist` mới) nạp lại thành `Blocklist` trong bộ nhớ, cache 15 giây.
+   và thống kê ASN toàn cục DỰNG LẠI TỪ DB cho mỗi lần chấm thay vì giữ trong bộ nhớ tiến trình — luôn đúng dù chạy
+   nhiều worker hay vừa restart. Blocklist (bảng `blocklist` mới) nạp lại thành `Blocklist` trong bộ nhớ, cache 15 giây.
 3. **Đặc trưng RBA** (`app/detection/rba_live_features.py`): dựng `HistorySummary` (kiểu đã có sẵn từ MR3,
-   `ml/rba/features.py`) bằng 4 truy vấn nhắm chỉ mục, KHÔNG phải một bản sao công thức riêng — cùng hàm
+   `ml/rba/features.py`) bằng truy vấn nhắm chỉ mục, KHÔNG phải một bản sao công thức riêng — cùng hàm
    `features_from_summary` dùng để train `hybrid_cp2` trên RBA. Đếm toàn cục (độ hiếm/LLR) cache TTL 30 giây (không
    nhắm được một chỉ mục hẹp).
+
+> **MR20:** bước 2 và 3 giờ đọc chung MỘT ngữ cảnh đăng nhập ([`login_context.py`](../backend/app/detection/login_context.py)):
+> lịch sử tài khoản ở dạng tổng hợp do DB tự đếm (trước đó cả rule engine lẫn đặc trưng đều nạp TOÀN BỘ lịch sử tài
+> khoản vào Python), và MỘT bộ đếm toàn cục có khoá thay cho hai bộ riêng (`DbGlobalStats` của rule engine trước đó
+> quét toàn bảng ở mọi lần đăng nhập có ASN). Đặc trưng không đổi — kiểm bằng `tests/test_login_context.py`; số đo ở
+> [`performance.md`](performance.md).
 4. **Hybrid risk engine** (`app/detection/hybrid_runtime.py`): nạp mô hình theo `model_registry` (mục 3), chấm bằng
    `combine_risk` (MR11) với đầu vào là kết quả bước 2 (`evaluation.hits`) và bước 3 (xác suất ML) → điểm 0-100 +
    hành động, ghi vào `login_events.hybrid_risk_score`/`hybrid_action`.
@@ -72,6 +77,11 @@ So với con số cũ của Tuần 5 (~250-260 ms, chủ yếu bcrypt ~227 ms) t
 đúng như kỳ vọng, vì MR12 chạy NỀN nên KHÔNG được cộng vào thời gian phản hồi. p99 tuần tự thỉnh thoảng nhảy lên
 ~2,3 giây (một vài lần trong 50 — nghi cache đếm toàn cục hết hạn đúng lúc, hoặc GC/độ trễ hệ điều hành, chưa cô lập
 được nguyên nhân chính xác).
+
+> **MR20 — đã cô lập được:** ~2,3 giây là chi phí của máy đo, không phải server: script gọi `localhost`, trên Windows
+> "localhost" thử IPv6 trước trong khi uvicorn chỉ nghe IPv4, mỗi KẾT NỐI MỚI mất thêm ~2 giây (đo: 2.073 ms so với 30 ms
+> qua `127.0.0.1`). Còn độ trễ tăng mạnh khi đồng thời chủ yếu do bcrypt chạy thẳng trong hàm `async` `/login`, chặn vòng
+> lặp sự kiện — đã chuyển sang threadpool. Số đo mới: [`performance.md`](performance.md) mục MR20.
 
 **Phát hiện quan trọng, đã sửa ngay trong MR12:** `run_detection_pipeline` vốn khai báo `async def` nhưng bên trong
 gọi TOÀN BỘ I/O ĐỒNG BỘ (SQLAlchemy driver `psycopg2`, redis-py đồng bộ) — nghĩa là chạy trực tiếp trên vòng lặp sự

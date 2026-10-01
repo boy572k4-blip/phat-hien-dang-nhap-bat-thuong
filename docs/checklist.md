@@ -384,16 +384,42 @@ Các mục dưới đây đổi mô hình hoặc quy tắc nên cần đồng ý
 
 ## Giai đoạn G — Hợp nhất kiến trúc (tuần 1 – đầu tuần 2)
 
-- [ ] **MR20 [Lõi, M] Ngữ cảnh đăng nhập dùng chung + sửa hiệu năng** (tuần 1)
-  - [ ] `LoginContext` dựng MỘT lần cho mỗi lần đăng nhập: GeoIP, ASN, phân tích UA, lịch sử tài khoản, thống kê IP/ASN 24h —
-    thay 3 lần truy vấn lịch sử hiện nay (baseline tầng 2, `DbAccountHistory`, `_user_events`)
-  - [ ] Đặc trưng đếm theo user (`u_*` của RBA) đọc từ hồ sơ tổng hợp cập nhật dần, thay vì quét toàn bộ lịch sử
-    (`_user_events` hiện không giới hạn dòng); chỉ truy vấn cửa sổ gần cho đặc trưng nhịp
-  - [ ] Gộp `GlobalCountsCache` (`rba_live_features.py`) và `DbGlobalStats` (`rule_engine_runtime.py`) — hai bộ cùng quét toàn
-    bảng mỗi 30 giây — thành một, có khoá chống nhiều request cùng làm mới
-  - [ ] `scripts/benchmark_login.py` dùng tài khoản mới mỗi lần chạy (hiện tái dùng `alice`, tự làm phình lịch sử)
-  - Xong khi: test tương đương offline/online của MR3 vẫn qua (đặc trưng không đổi); median tuần tự ≤ 350 ms; 10 request đồng
-    thời không timeout; toàn bộ test qua
+- [x] **MR20 [Lõi, M] Ngữ cảnh đăng nhập dùng chung + sửa hiệu năng** (tuần 1) — chi tiết và số đo:
+  [`performance.md`](performance.md) mục "MR20"
+  - [x] `LoginContext` ([`login_context.py`](../backend/app/detection/login_context.py)) dựng MỘT lần cho mỗi lần đăng nhập:
+    lịch sử tài khoản, thống kê IP/ASN 24h, đếm toàn cục, lần thử đã chuẩn hoá cho luật và cho đặc trưng (GeoIP, ASN, phân
+    tích UA tra một lần trước khi ghi `LoginEvent`, ngữ cảnh đọc lại từ dòng đó). Thay `DbAccountHistory` và `_user_events`
+    (rule engine, đặc trưng RBA, novelty MR13 đọc chung). ⚠️ **Chưa thay baseline tầng 2** (vẫn đọc mọi lần thành công để
+    tính giờ trung bình, ~21 ms với `alice`): tầng 2 bị thay bằng luật v2 ở MR21, tối ưu nó lúc này là làm hai lần
+  - [x] Đặc trưng `u_*` (và cả `ip_*`/`asn_*`) do **DB tự đếm** (`count ... FILTER`, `GROUP BY` theo 7 thuộc tính), Python chỉ
+    nhận vài con số — số dòng chuyển sang Python không còn phụ thuộc độ dài lịch sử hay lượng tấn công dồn dập từ một IP.
+    Khác kế hoạch: KHÔNG lưu bảng "hồ sơ cập nhật dần" riêng — truy vấn gộp qua chỉ mục đã đủ nhanh (lịch sử tài khoản ~2–5
+    ms) và tránh rủi ro hồ sơ lệch với log; đặc tả `ml/rba/features.py` đổi sang dạng tổng hợp (`UserHistory`, `InfraStats`)
+  - [x] Gộp `GlobalCountsCache` và `DbGlobalStats` thành một bộ đếm có khoá (một request tính lại, request khác chờ dùng
+    chung); DB gom nhóm sẵn nên mỗi lần tính lại ~4–16 ms thay vì ~67 ms. Sửa kèm: bộ cũ của luật nhà mạng hiếm dựng mới
+    mỗi lần chấm (quét toàn bảng ở MỌI lần đăng nhập có ASN) và đếm cả chính lần thử đang chấm
+  - [x] `scripts/benchmark_login.py`: tài khoản mới mỗi lần chạy (`--username/--password` để đo tài khoản có sẵn), gọi
+    `127.0.0.1`, UA trình duyệt thật, `--ip`, đếm kết quả từng loại (thành công/OTP/bị khoá)
+  - [x] Ngoài danh sách, tìm ra khi profiling: tương quan chiến dịch nạp toàn bộ bảng `alerts` mỗi lần có cảnh báo (~140 ms,
+    nguyên nhân lớn nhất) → lọc trong SQL; mô hình `hybrid_cp2` chạy 2 lần/lần đăng nhập → 1 lần; Isolation Forest chấm 1
+    dòng chậm → bộ chấm nhanh chỉ dùng khi trùng từng bit với sklearn ([`fast_iforest.py`](../backend/ml/fast_iforest.py));
+    **bcrypt chạy thẳng trong hàm `async` `/login` chặn vòng lặp sự kiện** (lý do chính khiến request đồng thời xếp hàng)
+    → threadpool; sau đó lộ ra **2 lỗi tranh chấp thật** (10 lần đăng nhập đầu tiên đồng thời của tài khoản mới: 9/10 lỗi
+    500 do trùng khoá `user_baseline`; cùng lớp lỗi ở mục khoá tự động MR16) → SAVEPOINT + đọc lại. Phép đo MR19 cũng lẫn
+    nhiễu của máy đo: "localhost" trên Windows mất ~2 s mỗi kết nối mới (thử IPv6 trước)
+  - **Kết quả** (HTTP thật, so cùng điều kiện với bản trước MR20): tuần tự tài khoản mới median **319 ms** (trước 395),
+    IP Việt Nam **323 ms** (trước 395), `alice` 349 ms (trước 689); **10 request đồng thời không timeout** — tài khoản mới
+    median 542 ms / **p95 855 ms** (trước 2.659 / 4.992 ms), `alice` median 839 ms / p95 2.888 ms / max 4.235 ms (trước
+    5.312 / 6.553 / 6.780 ms). Trong tiến trình: pipeline tài khoản mới 356 → 79 ms, `alice` 394 → 104 ms
+  - **Đặc trưng không đổi**: 41 test tương đương MR3 (đặc tả vs DuckDB) vẫn qua; test mới `test_login_context.py` so 50 đặc
+    trưng + lịch sử luật + novelty với mã cũ trên dữ liệu ngẫu nhiên — bằng tuyệt đối; trên Postgres thật 50/50 lần đăng
+    nhập tính lại bằng mã cũ và mới cho đặc trưng và xác suất ML giống hệt. Regression: **780/780** test backend qua (có
+    test mới cho bộ chấm Isolation Forest, bcrypt ngoài vòng lặp sự kiện, tranh chấp tạo baseline)
+  - ⚠️ Còn lại, chuyển cho task sau: đuôi dài khi nhiều request đồng thời vào CÙNG một tài khoản lịch sử dài (`alice` p95
+    ~2,2–2,9 s; không do khoá DB — đo 0 lần chờ khoá; nghi GIL, chưa xác minh); lỗi DB trong các khối "cô lập" của pipeline
+    làm hỏng cả giao dịch (→ MR23, mỗi khối một SAVEPOINT); **`/login` không chạy bcrypt khi tên không tồn tại → thời gian
+    phản hồi lộ tài khoản có thật** (→ MR32); tài khoản mới đăng nhập dồn dập bằng trình duyệt hiếm bị đòi OTP 22/50 lần
+    trong một lượt đo (→ MR26, báo nhầm)
 - [ ] **MR21 [Lõi, L] Một bộ luật duy nhất: gộp tầng 1 + tầng 2 vào rule engine v2, thêm "mức hành động tối thiểu"** (tuần 1)
   - [ ] `RuleSpec.min_action`: luật xác định mang sẵn hành động tối thiểu, tổng quát hoá cơ chế ghi đè của `blocklist_hit`.
     Giải quyết việc chỉ 1/19 luật đủ trọng số để tự cảnh báo. Mức cụ thể chốt ở MR25 bằng số đo báo nhầm; tạm thời:

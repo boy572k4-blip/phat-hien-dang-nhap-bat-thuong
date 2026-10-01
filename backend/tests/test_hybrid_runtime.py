@@ -157,3 +157,28 @@ def test_ml_component_against_the_real_trained_model_returns_a_known_component_n
     features = {name: 0.0 for name in FEATURE_NAMES}
     component = engine.ml_component(features)
     assert component in COMPONENT_LABELS
+
+
+def test_loading_the_real_model_accelerates_its_isolation_forest_without_changing_the_assessment(db_session, engine):
+    """MR20: nạp hybrid_cp2 thật thì thành phần Isolation Forest được gắn bộ chấm nhanh; một lần ml_assessment phải cho
+    ĐÚNG xác suất và thành phần như hai lần gọi riêng qua sklearn trước đây (điểm trùng từng bit nên xác suất trùng)."""
+    import numpy as np
+
+    from ml.rba.features import FEATURE_NAMES
+
+    model_registry.ensure_registered(db_session)
+    engine.load(db_session)
+    forest_component = next(c for c in engine.scorer.components if hasattr(c.scorer, "forest_"))
+    assert getattr(forest_component.scorer, "_fast_forest", None) is not None
+
+    rng = np.random.default_rng(3)
+    for _ in range(20):
+        features = {name: float(v) for name, v in zip(FEATURE_NAMES, rng.normal(scale=2.0, size=len(FEATURE_NAMES)))}
+        fast = engine.ml_assessment(features)
+        fast_forest = forest_component.scorer._fast_forest
+        del forest_component.scorer._fast_forest  # quay về đường sklearn gốc để so
+        try:
+            slow = engine.ml_assessment(features)
+        finally:
+            forest_component.scorer._fast_forest = fast_forest
+        assert fast == slow

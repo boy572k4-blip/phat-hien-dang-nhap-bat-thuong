@@ -38,7 +38,7 @@ def _force_action(monkeypatch, action, score=60):
         reputation_probability=0.0, overridden_by=None,
         contributions=(Contribution(source="test", label="ép hành động cho test", weight=score / 100, group="rule"),),
     )
-    monkeypatch.setattr(engine, "evaluate", lambda features, hits, bands=None: result)
+    monkeypatch.setattr(engine, "evaluate", lambda features, hits, bands=None, ml=None: result)  # ml: kết quả mô hình tính sẵn (MR20)
 
 
 # --------------------------------------------------------------------------------- (1) precheck chặn TRƯỚC mật khẩu

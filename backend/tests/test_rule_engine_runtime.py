@@ -1,5 +1,6 @@
-"""MR12 — app/detection/rule_engine_runtime.py: lịch sử tài khoản/thống kê ASN dựng từ DB, blocklist DB-backed có cache
-TTL (xoá giữa các test qua conftest.py), engine dùng fakeredis (qua monkeypatch của rate_counter, không phải Redis thật)."""
+"""MR12 — app/detection/rule_engine_runtime.py: lịch sử tài khoản/thống kê ASN dựng từ DB (MR20: dạng tổng hợp, thống
+kê dùng chung với đặc trưng RBA), blocklist DB-backed có cache TTL (xoá giữa các test qua conftest.py), engine dùng
+fakeredis (qua monkeypatch của rate_counter, không phải Redis thật)."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -9,7 +10,7 @@ import pytest
 from app.detection.engine import LoginAttempt
 from app.detection.rule_engine_runtime import (
     DbAccountHistory,
-    DbGlobalStats,
+    SharedGlobalStats,
     build_rule_engine,
     invalidate_blocklist_cache,
     load_threat_intel_at_startup,
@@ -78,28 +79,44 @@ def test_known_devices_uses_the_shared_ua_hash_function(db_session):
     assert history.known_devices == (ua_hash("Mozilla/5.0 special"),)
 
 
-# ------------------------------------------------------------------------------------------------ DbGlobalStats
+def test_preloaded_history_is_returned_without_touching_the_db(db_session):
+    """MR20: pipeline truyền lịch sử đã dựng trong `LoginContext` — `get()` phải trả đúng bản đó, kể cả `None`
+    (tài khoản chưa có lịch sử), không truy vấn lại."""
+    from app.detection.engine.types import AccountHistory
+
+    preloaded = AccountHistory(n_success=7)
+    history = DbAccountHistory(db_session, BASE, preloaded={"1": preloaded, "2": None})
+    assert history.get("1") is preloaded and history.get("2") is None
 
 
-def test_counts_only_successful_real_account_logins_by_asn_and_caches_within_ttl(db_session):
+# ------------------------------------------------------------------------------------------------ SharedGlobalStats
+
+
+def test_counts_only_successful_real_account_logins_strictly_before_by_asn(db_session):
     user = _user(db_session)
     _event(db_session, minutes=0, user_id=user.id, success=True, asn=100)
     _event(db_session, minutes=1, user_id=user.id, success=False, asn=100)  # thất bại: không tính
     _event(db_session, minutes=1, user_id=None, success=True, asn=100)  # tên không tồn tại: không tính
+    current = _event(db_session, minutes=2, user_id=user.id, success=True, asn=100)  # chính lần thử đang chấm: không tính
 
-    stats = DbGlobalStats(db_session, ttl_seconds=1000.0)
+    stats = SharedGlobalStats(db_session, current.created_at)
     assert stats.total_successes == 1 and stats.asn_successes(100) == 1 and stats.asn_successes(999) == 0
 
-    _event(db_session, minutes=2, user_id=user.id, success=True, asn=100)
-    assert stats.total_successes == 1  # còn trong TTL: không quét lại
 
+def test_shares_the_feature_global_counts_and_uses_counts_given_by_the_context(db_session):
+    """Luật nhà mạng hiếm và đặc trưng RBA đọc CÙNG một bộ đếm toàn cục (trước MR20 là hai bộ riêng, bộ của luật quét
+    toàn bảng ở mỗi lần đăng nhập); bản đếm truyền sẵn từ ngữ cảnh thì dùng thẳng."""
+    from app.detection.login_context import shared_global_counts
+    from ml.rba.features import GlobalCounts
 
-def test_a_fresh_instance_always_recomputes(db_session):
     user = _user(db_session)
     _event(db_session, minutes=0, user_id=user.id, success=True, asn=1)
-    assert DbGlobalStats(db_session).total_successes == 1
-    _event(db_session, minutes=1, user_id=user.id, success=True, asn=1)
-    assert DbGlobalStats(db_session).total_successes == 2  # instance MỚI, không dùng lại cache của instance trước
+    before = BASE + timedelta(minutes=5)
+    stats = SharedGlobalStats(db_session, before)
+    assert stats.total_successes == 1 and stats.counts is shared_global_counts(db_session, before)
+
+    given = GlobalCounts(total=42)
+    assert SharedGlobalStats(db_session, before, counts=given).total_successes == 42
 
 
 # ------------------------------------------------------------------------------------------------ blocklist DB-backed

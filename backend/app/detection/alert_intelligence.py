@@ -19,7 +19,7 @@ from datetime import timedelta
 from app.detection.engine.registry import REGISTRY, RuleSpec
 from app.detection.hybrid import RiskResult
 from ml.rba.explain import COMPONENT_LABELS
-from ml.rba.features import EventRecord, HistorySummary
+from ml.rba.features import NULL_KEY, EventRecord, HistorySummary
 
 # --------------------------------------------------------------------------------------------------------- novelty
 
@@ -61,18 +61,36 @@ class NoveltyFact:
         return f"lần đầu {label} này ({self.new_value}), trước đó dùng {self.usual_value} {self.usual_count} lần"
 
 
+def _usual_values(success_counts: Counter, attr: str) -> Counter:
+    """Số lần THÀNH CÔNG theo GIÁ TRỊ HIỂN THỊ (`_attr_value`) từ bộ đếm theo `attr_key` của đặc tả MR3
+    (`UserHistory.success_counts`), giữ thứ tự xuất hiện đầu tiên — khi hai giá trị dùng ngang nhau, `most_common` chọn
+    giá trị xuất hiện trước, đúng như khi còn đếm trên danh sách sự kiện theo thời gian (trước MR20)."""
+    values: Counter = Counter()
+    for key, n in success_counts.items():
+        if key == NULL_KEY:
+            continue  # thiếu dữ liệu không phải là một giá trị để so sánh mới/cũ
+        if attr == "asn":
+            values[f"AS{key}"] += n
+        elif attr == "device":
+            if key != "unknown":
+                values[_DEVICE_LABELS_VI.get(key, key)] += n
+        else:
+            values[key] += n
+    return values
+
+
 def compute_novelty(event: EventRecord, summary: HistorySummary) -> list[NoveltyFact]:
     """Mọi khía cạnh MỚI của `event` so với lịch sử THÀNH CÔNG của tài khoản — rỗng nếu tài khoản không tồn tại hoặc
     CHƯA từng đăng nhập thành công (khi đó mọi thứ đều "mới", so sánh không có ý nghĩa gì để nói)."""
-    successes = [e for e in (summary.user_events or []) if e.success]
-    if not successes:
+    user = summary.user
+    if user is None or user.n_success == 0:
         return []
     facts: list[NoveltyFact] = []
     for attr in _NOVELTY_PRIORITY:
         current = _attr_value(event, attr)
         if current is None:
             continue
-        counts = Counter(v for e in successes if (v := _attr_value(e, attr)) is not None)
+        counts = _usual_values(user.success_counts[attr], attr)
         if counts.get(current, 0) > 0:
             continue  # đã từng thấy giá trị này — không phải novelty
         usual_value, usual_count = counts.most_common(1)[0] if counts else (None, 0)

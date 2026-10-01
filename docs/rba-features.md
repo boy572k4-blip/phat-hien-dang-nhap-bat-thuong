@@ -62,7 +62,7 @@ Luồng thật dựng `HistorySummary` bằng truy vấn DB rồi gọi `feature
 
 | Thành phần | Nguồn |
 |---|---|
-| `user_events` | lịch sử `login_events` của tài khoản (chỉ trước thời điểm hiện tại) |
+| `user` | lịch sử `login_events` của tài khoản (chỉ trước thời điểm hiện tại) ở dạng tổng hợp `UserHistory` (MR20): số lần thử/thành công, các mốc thời gian, số lần thành công theo từng giá trị thuộc tính, và riêng 7 ngày gần nhất cho đặc trưng nhịp — DB tự đếm, không nạp toàn bộ lịch sử ([`login_context.py`](../backend/app/detection/login_context.py)) |
 | `ip_events`, `ip_prior_attempts_all` | `login_events` cùng IP trong 24h, và đếm tổng |
 | `asn_events` | `login_events` cùng ASN trong 24h (cần cột `asn` và file GeoLite2-ASN) |
 | `global_counts` | đếm các lần đăng nhập thành công của tài khoản thật theo từng giá trị thuộc tính; làm mới định kỳ (xấp xỉ có chủ đích: số đếm toàn cục "tính đến lần làm mới gần nhất") |

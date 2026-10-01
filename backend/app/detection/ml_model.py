@@ -41,12 +41,13 @@ _ARTIFACTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "ml", "arti
 
 _scaler = None
 _iso_forest = None
+_fast_forest = None  # bộ chấm trùng từng bit với sklearn (ml/fast_iforest.py), None nếu không qua kiểm tra -> dùng _iso_forest
 _meta: dict | None = None
 _load_attempted = False
 
 
 def _load() -> None:
-    global _scaler, _iso_forest, _meta, _load_attempted
+    global _scaler, _iso_forest, _fast_forest, _meta, _load_attempted
     if _load_attempted:
         return
     _load_attempted = True
@@ -54,8 +55,11 @@ def _load() -> None:
     try:
         import joblib  # import trễ — tránh phụ thuộc joblib nếu chưa cần ML
 
+        from ml.fast_iforest import build_verified
+
         _scaler = joblib.load(os.path.join(_ARTIFACTS_DIR, "scaler.joblib"))
         _iso_forest = joblib.load(os.path.join(_ARTIFACTS_DIR, "isolation_forest.joblib"))
+        _fast_forest = build_verified(_iso_forest)
         with open(os.path.join(_ARTIFACTS_DIR, "meta.json"), encoding="utf-8") as f:
             _meta = json.load(f)
         logger.info("Đã tải model ML tầng 3 (Isolation Forest) từ %s", _ARTIFACTS_DIR)
@@ -63,11 +67,13 @@ def _load() -> None:
         logger.warning("Chưa có model ML tầng 3 (chạy `python -m ml.train` trước) — tầng 3 tạm tắt.")
         _scaler = None
         _iso_forest = None
+        _fast_forest = None
         _meta = None
     except Exception:  # noqa: BLE001 — model lỗi/hỏng cũng không được chặn luồng đăng nhập
         logger.exception("Lỗi khi tải model ML tầng 3 — tầng 3 tạm tắt.")
         _scaler = None
         _iso_forest = None
+        _fast_forest = None
         _meta = None
 
 
@@ -87,9 +93,11 @@ def predict(features: dict) -> dict | None:
     try:
         vector = np.array([[features[name] for name in FEATURE_NAMES]])
         scaled = _scaler.transform(vector)
-        raw_pred = _iso_forest.predict(scaled)[0]  # -1 = bất thường, 1 = bình thường
-        anomaly_score = float(-_iso_forest.score_samples(scaled)[0])
-        return {"is_anomaly": bool(raw_pred == -1), "anomaly_score": anomaly_score}
+        # MỘT lần chấm thay cho predict() + score_samples() như trước (predict của sklearn tự tính lại đúng điểm này):
+        # sklearn coi là bất thường khi score_samples - offset_ < 0.
+        forest = _fast_forest or _iso_forest
+        score = float(forest.score_samples(scaled)[0])
+        return {"is_anomaly": bool(score - _iso_forest.offset_ < 0), "anomaly_score": -score}
     except Exception:  # noqa: BLE001
         logger.exception("Lỗi khi suy luận ML tầng 3 cho 1 lần đăng nhập — bỏ qua, không chặn luồng.")
         return None

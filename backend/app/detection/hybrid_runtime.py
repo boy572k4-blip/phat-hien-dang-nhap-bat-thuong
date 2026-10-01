@@ -12,6 +12,7 @@ train) đều bị NUỐT và ghi log; khi đó dùng HỒ SƠ DỰ PHÒNG cứn
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Iterable
 
 import joblib
@@ -27,6 +28,31 @@ logger = logging.getLogger("hybrid_runtime")
 # Hồ sơ dự phòng khi chưa nạp được hồ sơ đã hiệu chỉnh (MR11) từ đĩa: bands rộng rãi, chỉ luật ghi đè + trọng số mặc
 # định — vẫn cho điểm/hành động hợp lý (không phải "tắt hẳn"), chỉ là CHƯA hiệu chỉnh trên dữ liệu.
 _FALLBACK_PROFILE = HybridProfile(RuleWeights(), ActionBands(alert_at=40, step_up_at=65, lock_at=85), ml_calibration=None)
+
+
+@dataclass(frozen=True)
+class MlAssessment:
+    """Kết quả MỘT lần chạy mô hình cho một lần thử: xác suất đã hiệu chỉnh và tên thành phần `HybridMinTail` dẫn đầu.
+    `None` ở từng trường nghĩa là không có bằng chứng đó (thiếu đặc trưng, mô hình chưa nạp, scorer không hỗ trợ, lỗi)."""
+
+    probability: float | None
+    component: str | None
+
+
+NO_ML = MlAssessment(probability=None, component=None)
+
+
+def _attach_fast_isolation_forests(scorer) -> None:
+    """Gắn bộ chấm Isolation Forest nhanh (trùng từng bit với sklearn, `ml/fast_iforest.py`) cho các thành phần
+    Isolation Forest của mô hình vừa nạp. Thành phần nào không qua được kiểm tra trùng khớp thì giữ sklearn."""
+    from ml.fast_iforest import build_verified
+
+    for component in getattr(scorer, "components", ()):
+        forest = getattr(component.scorer, "forest_", None)
+        if forest is not None:
+            fast = build_verified(forest)
+            if fast is not None:
+                component.scorer._fast_forest = fast
 
 
 class HybridEngine:
@@ -55,52 +81,58 @@ class HybridEngine:
                 )
                 return
             scorer = joblib.load(entry.artifact_path)
+            _attach_fast_isolation_forests(scorer)
             profile = HybridProfile.from_file(entry.profile_path) if entry.profile_path else HybridProfile(RuleWeights(), self.profile.bands, None)
             self.scorer, self.profile, self.model_name, self.model_version = scorer, profile, entry.name, entry.version
             logger.info("đã nạp mô hình hybrid %s/%s (ml_available=%s)", entry.name, entry.version, self.ml_available)
         except Exception:  # noqa: BLE001 — không được chặn khởi động ứng dụng vì mô hình lỗi
             logger.exception("lỗi khi nạp mô hình hybrid — dùng hồ sơ dự phòng (chỉ luật + danh tiếng)")
 
-    def ml_probability(self, features: dict[str, float] | None) -> float | None:
-        """Xác suất tấn công đã hiệu chỉnh (0-1) từ 50 đặc trưng RBA, `None` nếu thiếu đặc trưng hoặc mô hình chưa sẵn sàng."""
+    def ml_assessment(self, features: dict[str, float] | None) -> MlAssessment:
+        """Chạy mô hình MỘT lần, trả cả xác suất đã hiệu chỉnh lẫn thành phần dẫn đầu (MR13 dùng để gợi ý họ tấn công).
+        Scorer không có `score_with_trigger` (hàm/lambda trần trong test) vẫn cho xác suất, thành phần là `None`.
+        Không bao giờ raise: lỗi thì trả `NO_ML`."""
         if features is None or not self.ml_available:
-            return None
+            return NO_ML
         try:
             import pandas as pd
 
             frame = pd.DataFrame([features])
-            raw = self.scorer(frame)[0]
-            return float(self.profile.ml_calibration.probability(raw))
+            if hasattr(self.scorer, "score_with_trigger"):
+                raw_scores, names = self.scorer.score_with_trigger(frame)
+                raw, component = raw_scores[0], str(names[0])
+            else:
+                raw, component = self.scorer(frame)[0], None
+            return MlAssessment(probability=float(self.profile.ml_calibration.probability(raw)), component=component)
         except Exception:  # noqa: BLE001
             logger.exception("lỗi khi chấm điểm ML — bỏ qua thành phần ML cho lần thử này")
-            return None
+            return NO_ML
+
+    def ml_probability(self, features: dict[str, float] | None) -> float | None:
+        """Xác suất tấn công đã hiệu chỉnh (0-1) từ 50 đặc trưng RBA, `None` nếu thiếu đặc trưng hoặc mô hình chưa sẵn sàng."""
+        return self.ml_assessment(features).probability
 
     def ml_component(self, features: dict[str, float] | None) -> str | None:
-        """Tên thành phần của `HybridMinTail` (hybrid_cp2) có xác suất đuôi nhỏ nhất — dùng để gán họ tấn công GỢI Ý
-        khi bằng chứng dẫn đầu là ML (MR13, `app/detection/alert_intelligence.py`). `None` nếu thiếu đặc trưng/mô hình
-        chưa sẵn sàng/lỗi (không bao giờ raise — cùng triết lý `ml_probability`)."""
-        if features is None or not self.ml_available:
-            return None
-        try:
-            import pandas as pd
+        """Tên thành phần của `HybridMinTail` (hybrid_cp2) có xác suất đuôi nhỏ nhất — `None` nếu thiếu đặc trưng, mô
+        hình chưa sẵn sàng, scorer không hỗ trợ hoặc lỗi."""
+        return self.ml_assessment(features).component
 
-            frame = pd.DataFrame([features])
-            return str(self.scorer.triggered_by(frame)[0])
-        except Exception:  # noqa: BLE001
-            logger.exception("lỗi khi tra thành phần ML dẫn đầu — bỏ qua gợi ý họ tấn công từ ML")
-            return None
-
-    def evaluate(self, features: dict[str, float] | None, hits: Iterable[RuleHit], *, bands: ActionBands | None = None) -> RiskResult:
+    def evaluate(
+        self, features: dict[str, float] | None, hits: Iterable[RuleHit], *, bands: ActionBands | None = None, ml: MlAssessment | None = None
+    ) -> RiskResult:
         """Điểm 0-100 + hành động cho MỘT lần thử — không bao giờ raise (mọi lỗi rơi về `combine_risk` với `ml_probability=None`).
 
         `bands`: ngưỡng đã NỚI LỎNG riêng cho tài khoản đang chấm (MR15, `app/detection/adaptive_threshold.py` +
         `UserRiskProfile`) — `None` (mặc định) thì dùng thẳng ngưỡng NHÓM (`self.profile.bands`, hồ sơ hybrid đang
         active). Không ảnh hưởng `weights`/`ml_calibration` — MR15 chỉ chỉnh NGƯỠNG HÀNH ĐỘNG, không chỉnh lại cách
-        tính điểm 0-100 (điểm hiển thị cho mọi người xem vẫn nhất quán; chỉ NGƯỠNG QUYẾT ĐỊNH hành động khác nhau)."""
+        tính điểm 0-100 (điểm hiển thị cho mọi người xem vẫn nhất quán; chỉ NGƯỠNG QUYẾT ĐỊNH hành động khác nhau).
+
+        `ml`: kết quả `ml_assessment` đã tính sẵn cho chính lần thử này (pipeline cần thành phần dẫn đầu nên tính trước
+        rồi truyền vào, tránh chạy mô hình lần thứ hai). `None` thì tự tính."""
         effective_bands = bands if bands is not None else self.profile.bands
         try:
-            ml_probability = self.ml_probability(features)
-        except Exception:  # noqa: BLE001 — phòng hờ kép, ml_probability() đã tự bắt lỗi nhưng không đánh đổi độ an toàn
+            ml_probability = (ml if ml is not None else self.ml_assessment(features)).probability
+        except Exception:  # noqa: BLE001 — phòng hờ kép, ml_assessment() đã tự bắt lỗi nhưng không đánh đổi độ an toàn
             ml_probability = None
         try:
             return combine_risk(ml_probability=ml_probability, hits=hits, weights=self.profile.weights, bands=effective_bands)

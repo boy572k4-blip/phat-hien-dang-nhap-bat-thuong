@@ -21,6 +21,7 @@ MR16 "Phản ứng tự động (mô phỏng)" đổi đường đi cho HAI trư
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -69,8 +70,10 @@ async def login(payload: LoginRequest, request: Request, background_tasks: Backg
         return _locked_response()
 
     user = db.query(User).filter(User.username == payload.username).first()
-    # So khớp hash chứ không so plain text.
-    success = verify_password(payload.password, user.password_hash) if user else False
+    # So khớp hash chứ không so plain text. MR20: bcrypt (~230 ms CPU, cố ý chậm) chạy ở threadpool — gọi thẳng trong hàm
+    # `async` này sẽ CHẶN vòng lặp sự kiện dùng chung, mọi request đăng nhập đồng thời phải xếp hàng chờ nhau (đo: 10
+    # request đồng thời mất ~3 giây). Thư viện bcrypt nhả GIL khi băm nên các lần kiểm tra chạy song song được trên nhiều lõi.
+    success = (await run_in_threadpool(verify_password, payload.password, user.password_hash)) if user else False
 
     if not success:
         background_tasks.add_task(

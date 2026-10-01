@@ -122,14 +122,98 @@ class GlobalCounts:
         return counts
 
 
+@dataclass(frozen=True)
+class UserHistory:
+    """Quá khứ của MỘT tài khoản (mọi lần thử TRƯỚC sự kiện đang tính) ở dạng TỔNG HỢP — đủ cho mọi đặc trưng theo user
+    mà không phải giữ cả danh sách sự kiện. MR20: luồng thật dựng bản này bằng vài truy vấn gộp trong DB
+    (`app/detection/login_context.py`) thay vì nạp toàn bộ lịch sử tài khoản; `from_events` dựng cùng nội dung từ một
+    danh sách sự kiện (đặc tả, kiểm chứng) — test chứng minh hai cách cho ra cùng đặc trưng."""
+
+    n_attempts: int
+    n_success: int
+    first_ts_us: int | None  # lần thử đầu tiên (None nếu chưa có lần nào)
+    last_ts_us: int | None
+    last_success_ts_us: int | None
+    fail_streak: int  # số lần thử SAU lần thành công gần nhất; chưa thành công lần nào thì là mọi lần thử
+    success_counts: dict[str, Counter]  # FREEMAN_ATTRS -> Counter(attr_key -> số lần THÀNH CÔNG), chèn theo thứ tự xuất hiện
+    attempts_1h: int  # cửa sổ (t - W, t) như mọi cửa sổ khác của đặc tả
+    attempts_24h: int
+    fails_24h: int
+    distinct_ips_24h: int
+    distinct_countries_7d: int  # quốc gia khác nhau (thiếu GeoIP tính là một giá trị, như `attr_key`)
+
+    @classmethod
+    def from_events(cls, t_us: int, events: Sequence[EventRecord]) -> "UserHistory":
+        """`events`: mọi lần thử của tài khoản TRƯỚC thời điểm `t_us`, theo thứ tự thời gian."""
+        successes = [e for e in events if e.success]
+        last_success = max((e.ts_us for e in successes), default=None)
+        counts: dict[str, Counter] = {a: Counter() for a in FREEMAN_ATTRS}
+        for e in successes:
+            for a in FREEMAN_ATTRS:
+                counts[a][attr_key(e, a)] += 1
+        in_24h = [e for e in events if e.ts_us > t_us - W_24H]
+        return cls(
+            n_attempts=len(events),
+            n_success=len(successes),
+            first_ts_us=min((e.ts_us for e in events), default=None),
+            last_ts_us=max((e.ts_us for e in events), default=None),
+            last_success_ts_us=last_success,
+            fail_streak=len(events) if last_success is None else sum(1 for e in events if e.ts_us > last_success),
+            success_counts=counts,
+            attempts_1h=sum(1 for e in events if e.ts_us > t_us - W_1H),
+            attempts_24h=len(in_24h),
+            fails_24h=sum(1 for e in in_24h if not e.success),
+            distinct_ips_24h=len({e.ip for e in in_24h}),
+            distinct_countries_7d=len({attr_key(e, "country") for e in events if e.ts_us > t_us - W_7D}),
+        )
+
+    def seen(self, attr: str, key: str) -> int:
+        """Số lần THÀNH CÔNG trước đó có thuộc tính `attr` (NOVELTY_ATTRS hoặc FREEMAN_ATTRS) mang giá trị `key` (đã qua
+        `attr_key`). Họ trình duyệt/hệ điều hành suy ra từ bộ đếm trình duyệt/hệ điều hành đầy đủ phiên bản."""
+        if attr in ("browser_family", "os_family"):
+            full = self.success_counts["browser" if attr == "browser_family" else "os"]
+            return sum(n for value, n in full.items() if strip_version(value) == key)
+        return self.success_counts[attr][key]
+
+
+@dataclass(frozen=True)
+class InfraStats:
+    """Hành vi gần đây của MỘT IP hoặc MỘT ASN (mọi lần thử TRƯỚC sự kiện, mọi tài khoản), dạng tổng hợp — đủ cho các đặc
+    trưng `infra_ip`/`infra_asn`. MR20: luồng thật để DB tự đếm, nên chi phí mỗi lần đăng nhập không tăng theo số lần thử
+    dồn dập từ chính IP/ASN đó (trước đó nạp từng dòng trong 24 giờ — một đợt credential stuffing làm MỌI lần chấm sau chậm dần)."""
+
+    attempts_1h: int
+    attempts_24h: int
+    fails_24h: int
+    distinct_users_24h: int  # tài khoản có thật khác nhau
+    unknown_attempts_24h: int  # lần thử vào tên đăng nhập không tồn tại
+    distinct_uas_24h: int  # User-Agent khác nhau (thiếu UA tính là một giá trị, như `attr_key`)
+    distinct_ips_24h: int
+    attempts_all: int | None  # mọi thời điểm; chỉ đặc trưng IP cần (`ip_prior_attempts_all`), ASN để None
+
+    @classmethod
+    def from_events(cls, t_us: int, events: Sequence[EventRecord], *, with_all_time: bool = True) -> "InfraStats":
+        """`events`: mọi lần thử cùng IP (hoặc cùng ASN) TRƯỚC thời điểm `t_us`, mọi thời điểm."""
+        in_24h = [e for e in events if e.ts_us > t_us - W_24H]
+        return cls(
+            attempts_1h=sum(1 for e in in_24h if e.ts_us > t_us - W_1H),
+            attempts_24h=len(in_24h),
+            fails_24h=sum(1 for e in in_24h if not e.success),
+            distinct_users_24h=len({e.user_id for e in in_24h if e.user_id is not None}),
+            unknown_attempts_24h=sum(1 for e in in_24h if e.user_id is None),
+            distinct_uas_24h=len({attr_key(e, "ua") for e in in_24h}),
+            distinct_ips_24h=len({e.ip for e in in_24h}),
+            attempts_all=len(events) if with_all_time else None,
+        )
+
+
 @dataclass
 class HistorySummary:
     """Mọi thứ cần biết về quá khứ để tính đặc trưng của một sự kiện (đều strictly trước sự kiện)."""
 
-    user_events: list[EventRecord] | None  # cùng tài khoản, toàn bộ lịch sử (None nếu tài khoản không tồn tại)
-    ip_events: list[EventRecord]  # cùng IP, trong 24h gần nhất
-    ip_prior_attempts_all: int  # cùng IP, mọi thời điểm
-    asn_events: list[EventRecord]  # cùng ASN, trong 24h gần nhất (rỗng nếu ASN không rõ)
+    user: UserHistory | None  # cùng tài khoản, dạng tổng hợp (None nếu tài khoản không tồn tại)
+    ip: InfraStats  # cùng IP
+    asn: InfraStats | None  # cùng ASN (None nếu ASN không rõ)
     global_counts: GlobalCounts
 
 
@@ -137,16 +221,16 @@ def summarize_history(event: EventRecord, prior: Sequence[EventRecord]) -> Histo
     """Dựng HistorySummary bằng cách lọc thô toàn bộ sự kiện trước đó (chậm, chính xác — dùng cho test)."""
     t = event.ts_us
     before = [e for e in prior if e.ts_us < t]
-    user_events = None
+    user = None
     if event.user_id is not None:
-        user_events = [e for e in before if e.user_id == event.user_id]
-    same_ip = [e for e in before if e.ip == event.ip]
-    asn_events = [] if event.asn is None else [e for e in before if e.asn == event.asn and e.ts_us > t - W_24H]
+        user = UserHistory.from_events(t, [e for e in before if e.user_id == event.user_id])
+    asn = None
+    if event.asn is not None:
+        asn = InfraStats.from_events(t, [e for e in before if e.asn == event.asn], with_all_time=False)
     return HistorySummary(
-        user_events=user_events,
-        ip_events=[e for e in same_ip if e.ts_us > t - W_24H],
-        ip_prior_attempts_all=len(same_ip),
-        asn_events=asn_events,
+        user=user,
+        ip=InfraStats.from_events(t, [e for e in before if e.ip == event.ip]),
+        asn=asn,
         global_counts=GlobalCounts.from_events(e for e in before if e.success and e.user_id is not None),
     )
 
@@ -168,62 +252,54 @@ def features_from_summary(event: EventRecord, summary: HistorySummary) -> dict[s
     for a in FREEMAN_ATTRS:
         f[f"rare_{a}"] = -math.log(p_global[a])
 
-    ue = summary.user_events
-    if ue is not None:
-        successes = [e for e in ue if e.success]
-        n_success = len(successes)
-        f["u_n_attempts"] = float(len(ue))
+    uh = summary.user
+    if uh is not None:
+        n_success = uh.n_success
+        f["u_n_attempts"] = float(uh.n_attempts)
         f["u_n_success"] = float(n_success)
 
         for a in NOVELTY_ATTRS:
-            key = attr_key(event, a)
-            seen = sum(1 for e in successes if attr_key(e, a) == key)
-            f[f"new_{a}"] = 1.0 if seen == 0 else 0.0
+            f[f"new_{a}"] = 1.0 if uh.seen(a, attr_key(event, a)) == 0 else 0.0
 
         llr_total = 0.0
         for a in FREEMAN_ATTRS:
-            key = attr_key(event, a)
-            seen = sum(1 for e in successes if attr_key(e, a) == key)
+            seen = uh.seen(a, attr_key(event, a))
             p_user = (seen + ALPHA * p_global[a]) / (n_success + ALPHA)
             llr = math.log(p_global[a]) - math.log(p_user)
             f[f"llr_{a}"] = llr
             llr_total += llr
         f["llr_sum"] = llr_total
 
-        if ue:
-            f["u_age_days"] = (t - min(e.ts_us for e in ue)) / DAY_US
-            f["u_secs_since_last"] = (t - max(e.ts_us for e in ue)) / US_PER_SECOND
-        if successes:
-            last_success_ts = max(e.ts_us for e in successes)
-            f["u_secs_since_last_success"] = (t - last_success_ts) / US_PER_SECOND
-            f["u_fail_streak"] = float(sum(1 for e in ue if e.ts_us > last_success_ts))
-        else:
-            f["u_fail_streak"] = float(len(ue))
+        if uh.n_attempts:
+            f["u_age_days"] = (t - uh.first_ts_us) / DAY_US
+            f["u_secs_since_last"] = (t - uh.last_ts_us) / US_PER_SECOND
+        if n_success:
+            f["u_secs_since_last_success"] = (t - uh.last_success_ts_us) / US_PER_SECOND
+        f["u_fail_streak"] = float(uh.fail_streak)
 
-        f["u_attempts_1h"] = float(sum(1 for e in ue if e.ts_us > t - W_1H))
-        in_24h = [e for e in ue if e.ts_us > t - W_24H]
-        f["u_attempts_24h"] = float(len(in_24h))
-        f["u_fails_24h"] = float(sum(1 for e in in_24h if not e.success))
-        f["u_distinct_ips_24h"] = float(len({e.ip for e in in_24h}))
-        f["u_distinct_countries_7d"] = float(len({attr_key(e, "country") for e in ue if e.ts_us > t - W_7D}))
+        f["u_attempts_1h"] = float(uh.attempts_1h)
+        f["u_attempts_24h"] = float(uh.attempts_24h)
+        f["u_fails_24h"] = float(uh.fails_24h)
+        f["u_distinct_ips_24h"] = float(uh.distinct_ips_24h)
+        f["u_distinct_countries_7d"] = float(uh.distinct_countries_7d)
 
-    ie = summary.ip_events
-    f["ip_attempts_24h"] = float(len(ie))
-    f["ip_attempts_1h"] = float(sum(1 for e in ie if e.ts_us > t - W_1H))
-    f["ip_fail_ratio_24h"] = _ratio(sum(1 for e in ie if not e.success), len(ie))
-    f["ip_distinct_users_24h"] = float(len({e.user_id for e in ie if e.user_id is not None}))
-    f["ip_unknown_attempts_24h"] = float(sum(1 for e in ie if e.user_id is None))
-    f["ip_distinct_ua_24h"] = float(len({attr_key(e, "ua") for e in ie}))
-    f["ip_prior_attempts_all"] = float(summary.ip_prior_attempts_all)
+    ip = summary.ip
+    f["ip_attempts_24h"] = float(ip.attempts_24h)
+    f["ip_attempts_1h"] = float(ip.attempts_1h)
+    f["ip_fail_ratio_24h"] = _ratio(ip.fails_24h, ip.attempts_24h)
+    f["ip_distinct_users_24h"] = float(ip.distinct_users_24h)
+    f["ip_unknown_attempts_24h"] = float(ip.unknown_attempts_24h)
+    f["ip_distinct_ua_24h"] = float(ip.distinct_uas_24h)
+    f["ip_prior_attempts_all"] = float(ip.attempts_all)
 
     if event.asn is not None:
-        ae = summary.asn_events
-        f["asn_attempts_24h"] = float(len(ae))
-        f["asn_attempts_1h"] = float(sum(1 for e in ae if e.ts_us > t - W_1H))
-        f["asn_fail_ratio_24h"] = _ratio(sum(1 for e in ae if not e.success), len(ae))
-        f["asn_distinct_users_24h"] = float(len({e.user_id for e in ae if e.user_id is not None}))
-        f["asn_distinct_ips_24h"] = float(len({e.ip for e in ae}))
-        f["asn_unknown_share_24h"] = _ratio(sum(1 for e in ae if e.user_id is None), len(ae))
+        asn = summary.asn
+        f["asn_attempts_24h"] = float(asn.attempts_24h)
+        f["asn_attempts_1h"] = float(asn.attempts_1h)
+        f["asn_fail_ratio_24h"] = _ratio(asn.fails_24h, asn.attempts_24h)
+        f["asn_distinct_users_24h"] = float(asn.distinct_users_24h)
+        f["asn_distinct_ips_24h"] = float(asn.distinct_ips_24h)
+        f["asn_unknown_share_24h"] = _ratio(asn.unknown_attempts_24h, asn.attempts_24h)
 
     return f
 

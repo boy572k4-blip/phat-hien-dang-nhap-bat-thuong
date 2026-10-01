@@ -33,9 +33,9 @@ def _spy_on_evaluate(monkeypatch):
     original = engine.evaluate
     captured = {}
 
-    def spy(features, hits, *, bands=None):
+    def spy(features, hits, *, bands=None, ml=None):
         captured["bands"] = bands
-        return original(features, hits, bands=bands)
+        return original(features, hits, bands=bands, ml=ml)
 
     monkeypatch.setattr(engine, "evaluate", spy)
     return captured

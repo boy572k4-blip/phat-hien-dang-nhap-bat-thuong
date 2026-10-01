@@ -15,9 +15,10 @@ from app.detection.alert_intelligence import (
 from app.detection.engine.registry import CATEGORIES, REGISTRY
 from app.detection.hybrid import Contribution, RiskResult
 from ml.rba.explain import COMPONENT_LABELS
-from ml.rba.features import EventRecord, GlobalCounts, HistorySummary
+from ml.rba.features import EventRecord, GlobalCounts, HistorySummary, InfraStats, UserHistory
 
 US = 1_000_000
+_FAR_FUTURE_US = 10**18  # mốc "hiện tại" của bản tóm tắt: sau mọi sự kiện test (novelty không dùng cửa sổ thời gian)
 
 
 def _event(ts_us=0, user_id=1, ip="1.1.1.1", asn=100, country="VN", device_type="desktop", success=True) -> EventRecord:
@@ -28,7 +29,8 @@ def _event(ts_us=0, user_id=1, ip="1.1.1.1", asn=100, country="VN", device_type=
 
 
 def _summary(user_events) -> HistorySummary:
-    return HistorySummary(user_events=user_events, ip_events=[], ip_prior_attempts_all=0, asn_events=[], global_counts=GlobalCounts())
+    user = None if user_events is None else UserHistory.from_events(_FAR_FUTURE_US, user_events)
+    return HistorySummary(user=user, ip=InfraStats.from_events(_FAR_FUTURE_US, []), asn=None, global_counts=GlobalCounts())
 
 
 def _risk_result(contributions) -> RiskResult:

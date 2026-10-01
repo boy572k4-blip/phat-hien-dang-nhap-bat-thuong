@@ -84,6 +84,40 @@ def test_update_baseline_computes_avg_and_stddev(db_session):
     assert baseline.first_login_at is not None
 
 
+def test_update_baseline_survives_a_concurrent_first_login(db_session, monkeypatch):
+    """MR20: hai lần đăng nhập thành công ĐẦU TIÊN của cùng tài khoản đến đồng thời — request này vừa thấy "chưa có
+    baseline" thì request kia đã ghi xong. Trước MR20: trùng khoá chính, request lỗi 500 (đo thật: 9/10 request đồng thời
+    vào một tài khoản mới). Giờ phải dùng lại dòng của request kia và cộng tiếp, không lỗi."""
+    from sqlalchemy import false
+
+    user_id = _make_user(db_session).id
+    first_login = datetime.now(timezone.utc) - timedelta(minutes=5)
+    db_session.add(UserBaseline(user_id=user_id, successful_login_count=1, first_login_at=first_login))  # dòng của request kia
+    db_session.commit()
+    db_session.expunge_all()  # phiên của request này chưa từng thấy dòng đó
+
+    real_query, lookups = db_session.query, []
+
+    def first_lookup_misses(*entities):
+        query = real_query(*entities)
+        if len(entities) == 1 and entities[0] is UserBaseline and not lookups:  # `is`: `==` trên cột SQLAlchemy dựng biểu thức SQL
+            lookups.append(1)
+            return query.filter(false())  # đúng khe hở tranh chấp: lần đọc đầu chưa thấy dòng vừa được ghi
+        return query
+
+    monkeypatch.setattr(db_session, "query", first_lookup_misses)
+    user = db_session.get(User, user_id)
+    event = LoginEvent(user_id=user.id, attempted_username=user.username, success=True, ip_address="1.2.3.4", is_synthetic=False, created_at=datetime.now(timezone.utc))
+    db_session.add(event)
+    db_session.flush()
+
+    baseline = update_baseline_after_successful_login(db_session, user, event)
+    db_session.commit()
+    assert lookups == [1]
+    assert baseline.successful_login_count == 2  # dòng cũ được dùng lại và cộng tiếp, không tạo trùng
+    assert db_session.query(UserBaseline).count() == 1
+
+
 def test_known_device_and_location_round_trip(db_session):
     user = _make_user(db_session)
 

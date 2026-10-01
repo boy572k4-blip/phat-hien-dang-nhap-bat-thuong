@@ -45,6 +45,9 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 
+from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
+
 from app.database import SessionLocal
 from app.detection import alert_intelligence, hybrid_runtime, ml_model, perf
 from app.detection.adaptive_threshold import apply_delta
@@ -55,10 +58,9 @@ from app.detection.baseline import (
     update_baseline_after_successful_login,
 )
 from app.detection.campaign_correlation import LIVE_CAMPAIGN_WINDOW
-from app.detection.engine.types import LoginAttempt
 from app.detection.geoip import lookup_asn, lookup_ip
+from app.detection.login_context import build_login_context
 from app.detection.rate_counter import check_fail_count, redis_client
-from app.detection.rba_live_features import build_features_and_summary, event_record_for
 from app.detection.response_execution import LOCK_TTL, lock_kind_and_value
 from app.detection.rule_engine_runtime import build_rule_engine, invalidate_blocklist_cache
 from app.detection.rules import (
@@ -301,16 +303,14 @@ def _run_detection_pipeline_sync(
         # THẾ. Cô lập trong try/except RIÊNG: lỗi ở đây không được làm mất alert tầng 1-2-3 đã ghi hay làm sập luồng.
         try:
             with perf.timer("hybrid"):
-                attempt = LoginAttempt(
-                    ts=event.created_at.timestamp(), username=username, success=success, ip=ip, user_key=str(user_id) if user_id else None,
-                    asn=event.asn, country=event.country, city=event.city, latitude=event.latitude, longitude=event.longitude,
-                    user_agent=user_agent, browser=parsed_ua.browser, os=parsed_ua.os, device_type=parsed_ua.device_type,
-                )
+                # MR20: lịch sử tài khoản (dạng tổng hợp), IP/ASN 24h và đếm toàn cục dựng MỘT lần ở đây, dùng chung cho
+                # rule engine, đặc trưng RBA và novelty bên dưới (app/detection/login_context.py).
+                with perf.timer("login_context"):
+                    context = build_login_context(db, event, username=username)
                 with perf.timer("rule_engine"):
-                    evaluation = build_rule_engine(db, before=event.created_at).evaluate(attempt)
+                    evaluation = build_rule_engine(db, before=event.created_at, context=context).evaluate(context.attempt)
                 with perf.timer("rba_features"):
-                    event_record = event_record_for(event)
-                    features, history_summary = build_features_and_summary(db, event_record)
+                    features = context.rba_features()
                 # MR15: ngưỡng THÍCH NGHI riêng cho tài khoản này nếu đã đủ phản hồi (adaptive_threshold.apply_delta),
                 # NHÓM (mặc định) nếu chưa có hàng UserRiskProfile hay user_id là None (tên đăng nhập không tồn tại).
                 user_bands = None
@@ -318,15 +318,17 @@ def _run_detection_pipeline_sync(
                     risk_profile = db.get(UserRiskProfile, user_id)
                     if risk_profile is not None and risk_profile.threshold_delta > 0:
                         user_bands = apply_delta(hybrid_runtime.get_engine().profile.bands, risk_profile.threshold_delta)
-                risk_result = hybrid_runtime.get_engine().evaluate(features, evaluation.hits, bands=user_bands)
+                hybrid_engine = hybrid_runtime.get_engine()
+                with perf.timer("ml_inference"):
+                    ml_assessment = hybrid_engine.ml_assessment(features)  # MỘT lần chạy mô hình cho cả điểm lẫn thành phần dẫn đầu (MR20)
+                risk_result = hybrid_engine.evaluate(features, evaluation.hits, bands=user_bands, ml=ml_assessment)
                 event.hybrid_risk_score = risk_result.score
                 event.hybrid_action = risk_result.action
 
                 if risk_result.action != "allow":
                     # --- MR13: gán họ tấn công gợi ý, novelty, ưu tiên (app/detection/alert_intelligence.py — thuần, không đụng DB) ---
-                    ml_component = hybrid_runtime.get_engine().ml_component(features)
-                    family, confidence = alert_intelligence.suggest_attack_family(risk_result, ml_component=ml_component)
-                    novelty_facts = alert_intelligence.compute_novelty(event_record, history_summary) if history_summary is not None else []
+                    family, confidence = alert_intelligence.suggest_attack_family(risk_result, ml_component=ml_assessment.component)
+                    novelty_facts = alert_intelligence.compute_novelty(context.record, context.summary)
                     importance = user.importance if user is not None else 1.0
                     priority = alert_intelligence.priority_score(novelty_facts, confidence, importance)
                     top_rule = next((c.source for c in risk_result.contributions if c.source != "ml"), None)
@@ -412,9 +414,15 @@ def _run_detection_pipeline_sync(
                             # chỉ GIA HẠN nếu lock hiện tại đi xa hơn (không bao giờ RÚT NGẮN một mục đang dài hơn/vĩnh viễn).
                             block_entry = db.query(BlocklistEntry).filter(BlocklistEntry.kind == kind, BlocklistEntry.value == value).first()
                             if block_entry is None:
-                                block_entry = BlocklistEntry(kind=kind, value=value, reason=f"Tự động khoá (MR16) — {reasons}.", added_by="system", expires_at=new_expiry)
-                                db.add(block_entry)
-                                db.flush()
+                                # MR20: một lần thử ĐỒNG THỜI khác cũng có thể vừa quyết định khoá đúng mục này và chèn
+                                # trước — chèn trong SAVEPOINT, trùng thì dùng mục của lần thử kia (cùng lớp lỗi đã gặp thật
+                                # ở baseline tầng 2, xem update_baseline_after_successful_login).
+                                try:
+                                    with db.begin_nested():
+                                        block_entry = BlocklistEntry(kind=kind, value=value, reason=f"Tự động khoá (MR16) — {reasons}.", added_by="system", expires_at=new_expiry)
+                                        db.add(block_entry)
+                                except IntegrityError:
+                                    block_entry = db.query(BlocklistEntry).filter(BlocklistEntry.kind == kind, BlocklistEntry.value == value).one()
                                 invalidate_blocklist_cache()  # để lần thử NGAY SAU (có thể trong vài mili-giây) đã thấy mục khoá mới, không đợi hết TTL cache 15s
                             elif block_entry.expires_at is not None and block_entry.expires_at < new_expiry:
                                 block_entry.expires_at = new_expiry
@@ -440,13 +448,28 @@ def _run_detection_pipeline_sync(
                 # (Alert.created_at, server_default=func.now()) — hai mốc này trùng nhau trong vận hành bình thường
                 # (chấm gần như ngay khi xảy ra) nhưng KHÔNG PHẢI luôn vậy (nạp lại/backfill); test MR14 tự tạo timestamp
                 # giả cũng lộ ra sai khác này ngay. So sánh chuẩn hoá múi giờ bằng ensure_utc() (đọc lại từ SQLite mất
-                # tzinfo — cùng lớp lỗi đã sửa ở MR9/MR12/MR13). Quét toàn bảng alerts: chấp nhận được ở quy mô hiện tại
-                # (chỉ chạy khi CÓ alert mới, không phải mọi lần đăng nhập) — cùng tinh thần GlobalCountsCache (MR12).
+                # tzinfo — cùng lớp lỗi đã sửa ở MR9/MR12/MR13).
                 now = ensure_utc(event.created_at)
                 window_start = now - LIVE_CAMPAIGN_WINDOW
+                # MR20: lọc hạ tầng + cửa sổ thời gian NGAY TRONG SQL (dùng chỉ mục ip_address/asn của login_events).
+                # Trước đó nạp TOÀN BỘ bảng alerts vào Python rồi mới lọc — đo trên Postgres dev (3.500 alert): ~140 ms
+                # mỗi lần đăng nhập có cảnh báo, và tăng tuyến tính theo số alert tích luỹ. Bộ lọc Python bên dưới giữ
+                # NGUYÊN điều kiện cũ trên tập kết quả nhỏ, nên ngữ nghĩa không đổi.
+                same_infra = []
+                if event.ip_address is not None:
+                    same_infra.append(LoginEvent.ip_address == event.ip_address)
+                if event.asn is not None:
+                    same_infra.append(LoginEvent.asn == event.asn)
+                candidates = (
+                    db.query(Alert, LoginEvent)
+                    .join(LoginEvent, Alert.login_event_id == LoginEvent.id)
+                    .filter(Alert.login_event_id != event.id, or_(*same_infra), LoginEvent.created_at >= window_start, LoginEvent.created_at <= now)
+                )
+                if user_id is not None:
+                    candidates = candidates.filter(or_(LoginEvent.user_id.is_(None), LoginEvent.user_id != user_id))
                 matches = [
                     (a, ensure_utc(le.created_at))
-                    for a, le in db.query(Alert, LoginEvent).join(LoginEvent, Alert.login_event_id == LoginEvent.id).filter(Alert.login_event_id != event.id)
+                    for a, le in candidates
                     if window_start <= ensure_utc(le.created_at) <= now
                     and ((event.ip_address is not None and le.ip_address == event.ip_address) or (event.asn is not None and le.asn == event.asn))
                     and not (le.user_id is not None and le.user_id == user_id)  # loại chính tài khoản này lặp lại — đó là việc của MR13, không phải "nhiều tài khoản"

@@ -191,4 +191,7 @@ class IsolationForestScorer:
         return self
 
     def __call__(self, frame: pd.DataFrame) -> np.ndarray:
-        return -self.forest_.score_samples(self._prepare(frame))
+        # `_fast_forest`: bộ chấm trùng từng bit với sklearn (ml/fast_iforest.py), chỉ được gắn khi nạp ở luồng thật
+        # (app/detection/hybrid_runtime.py); đối tượng huấn luyện/nạp ngoại tuyến không có thuộc tính này -> dùng sklearn.
+        forest = getattr(self, "_fast_forest", None) or self.forest_
+        return -forest.score_samples(self._prepare(frame))

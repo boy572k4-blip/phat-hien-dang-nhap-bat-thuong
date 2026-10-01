@@ -1,7 +1,7 @@
 """Dựng `RuleEngine` (MR9-10) cho luồng thật /login (MR12): trạng thái cửa sổ trong Redis (bền qua restart, dùng chung
-kết nối với `rate_counter.py`), lịch sử tài khoản/thống kê toàn cục DỰNG LẠI TỪ DB mỗi lần (không giữ trong bộ nhớ tiến
-trình) — luôn đúng dù ứng dụng chạy nhiều tiến trình/worker hay vừa khởi động lại, đổi lại phải truy vấn DB mỗi lần
-đăng nhập; các truy vấn đều nhắm chỉ mục sẵn có (`ix_login_events_user_created`) nên rẻ (đo ở `docs/realtime-integration.md`).
+kết nối với `rate_counter.py`), lịch sử tài khoản DỰNG LẠI TỪ DB mỗi lần (không giữ trong bộ nhớ tiến trình) — luôn đúng
+dù ứng dụng chạy nhiều tiến trình/worker hay vừa khởi động lại. Từ MR20 lịch sử ở dạng tổng hợp do DB tự đếm và thống kê
+toàn cục dùng chung với đặc trưng RBA (`app/detection/login_context.py`); pipeline truyền sẵn cả hai qua `LoginContext`.
 
     engine = build_rule_engine(db)
     evaluation = engine.evaluate(attempt)   # record=True: cũng ghi vào Redis cho lần sau
@@ -23,9 +23,11 @@ from sqlalchemy.orm import Session
 from app.detection import rate_counter
 from app.detection.engine import Blocklist, RedisStore, RuleConfig, RuleEngine, ThreatIntel
 from app.detection.engine.intel import BlockEntry
-from app.detection.engine.types import AccountHistory, LoginAttempt, ua_hash
-from app.models import BlocklistEntry, LoginEvent, RuleOverride
+from app.detection.engine.types import AccountHistory, LoginAttempt
+from app.detection.login_context import LoginContext, fetch_account_snapshot, shared_global_counts
+from app.models import BlocklistEntry, RuleOverride
 from app.utils.time import ensure_utc
+from ml.rba.features import GlobalCounts
 
 logger = logging.getLogger("rule_engine_runtime")
 
@@ -56,84 +58,59 @@ def _get_threat_intel() -> ThreatIntel:
 
 @dataclass
 class DbAccountHistory:
-    """`HistoryProvider` dựng lại từ DB mỗi lần gọi `get()` — không giữ trạng thái giữa các lần thử (`update()` là no-op:
-    lần sau `get()` lại truy vấn DB, đã thấy chính lần thử vừa ghi)."""
+    """`HistoryProvider` đọc lịch sử tài khoản TRƯỚC mốc `before` qua `AccountSnapshot` (MR20, dạng tổng hợp do DB tự
+    đếm — không nạp toàn bộ lịch sử). `preloaded`: lịch sử đã dựng sẵn theo `user_key` (pipeline truyền từ
+    `LoginContext`, không truy vấn lại); tài khoản khác thì truy vấn rồi nhớ trong phạm vi đối tượng này. `update()` là
+    no-op: lần chấm sau dựng đối tượng mới, đọc DB mới nhất (đã thấy chính lần thử vừa ghi)."""
 
     db: Session
     before: datetime  # lấy lịch sử TRƯỚC mốc này (thời điểm của lần thử đang chấm)
+    preloaded: dict[str, AccountHistory | None] = field(default_factory=dict)
 
     def get(self, user_key: str | None) -> AccountHistory | None:
         if user_key is None:
             return None
-        try:
-            user_id = int(user_key)
-        except ValueError:
-            return None
-        rows = self.db.execute(
-            select(LoginEvent.created_at, LoginEvent.latitude, LoginEvent.longitude, LoginEvent.success, LoginEvent.country, LoginEvent.user_agent)
-            .where(LoginEvent.user_id == user_id, LoginEvent.created_at < self.before)
-            .order_by(LoginEvent.created_at)
-        ).all()
-        if not rows:
-            return None
-        history = AccountHistory()
-        for created_at, lat, lon, success, country, agent in rows:
-            history.last_event_ts = ensure_utc(created_at).timestamp()
-            history.last_event_lat, history.last_event_lon = lat, lon
-            if success:
-                history.last_success_ts = ensure_utc(created_at).timestamp()
-                history.n_success += 1
-                if country and country not in history.known_countries:
-                    history.known_countries += (country,)
-                hashed = ua_hash(agent)
-                if hashed and hashed not in history.known_devices:
-                    history.known_devices += (hashed,)
-        return history
+        if user_key not in self.preloaded:
+            try:
+                user_id = int(user_key)
+            except ValueError:
+                return None
+            self.preloaded[user_key] = fetch_account_snapshot(self.db, user_id, self.before).account_history()
+        return self.preloaded[user_key]
 
     def update(self, attempt: LoginAttempt) -> None:
-        pass  # xem docstring lớp: `get()` luôn đọc DB mới nhất, không cần giữ trạng thái riêng
+        pass  # xem docstring lớp
 
 
-# ------------------------------------------------------------------------------------------------ thống kê toàn cục (nhà mạng) từ DB, có cache TTL ngắn
+# ------------------------------------------------------------------------------------------------ thống kê toàn cục (nhà mạng), dùng chung với đặc trưng RBA
 
 
 @dataclass
-class DbGlobalStats:
-    """`GlobalStats` (dùng bởi `rare_network_login`) — đếm đăng nhập THÀNH CÔNG của tài khoản có thật, theo ASN, TOÀN
-    BẢNG. Cache TTL ngắn cùng lý do với `rba_live_features.GlobalCountsCache` (không nhắm được một chỉ mục hẹp)."""
+class SharedGlobalStats:
+    """`GlobalStats` (dùng bởi `rare_network_login`) — đếm đăng nhập THÀNH CÔNG vào tài khoản có thật theo ASN, đọc từ
+    CHÍNH bộ đếm toàn cục mà đặc trưng RBA dùng (`login_context.GlobalCountsCache`, MR20). Trước MR20 là bộ `DbGlobalStats`
+    riêng, dựng mới mỗi lần chấm nên quét toàn bảng ở MỌI lần đăng nhập có ASN, và đếm cả chính lần thử đang chấm (lệch
+    với replay hiệu chỉnh, nơi thống kê chỉ cập nhật SAU khi chấm). `counts`: bản đếm đã có sẵn (pipeline truyền từ
+    `LoginContext`); không có thì chỉ lấy khi luật thật sự cần."""
 
     db: Session
-    ttl_seconds: float = 30.0
-    _total: int = field(default=0, init=False)
-    _by_asn: dict[int, int] = field(default_factory=dict, init=False)
-    _cached_at: float = field(default=-1.0, init=False)
+    before: datetime
+    counts: GlobalCounts | None = None
 
-    def _refresh(self) -> None:
-        now = time.monotonic()
-        if now - self._cached_at < self.ttl_seconds:
-            return
-        rows = self.db.execute(
-            select(LoginEvent.asn).where(LoginEvent.success.is_(True), LoginEvent.user_id.isnot(None))
-        ).all()
-        self._total = len(rows)
-        by_asn: dict[int, int] = {}
-        for (asn,) in rows:
-            if asn is not None:
-                by_asn[asn] = by_asn.get(asn, 0) + 1
-        self._by_asn = by_asn
-        self._cached_at = now
+    def _counts(self) -> GlobalCounts:
+        if self.counts is None:
+            self.counts = shared_global_counts(self.db, self.before)
+        return self.counts
 
     @property
     def total_successes(self) -> int:
-        self._refresh()
-        return self._total
+        return self._counts().total
 
     def asn_successes(self, asn: int) -> int:
-        self._refresh()
-        return self._by_asn.get(asn, 0)
+        return self._counts().by_attr["asn"][str(asn)]  # khoá theo `attr_key` của đặc tả MR3: ASN dạng chuỗi
 
     def update(self, attempt: LoginAttempt) -> None:
-        pass  # bộ đếm đọc lại từ DB theo TTL, không cần cập nhật tức thời tại đây
+        pass  # bộ đếm dùng chung tự làm mới theo TTL
 
 
 # ------------------------------------------------------------------------------------------------ blocklist DB-backed, cache TTL ngắn
@@ -196,16 +173,24 @@ def invalidate_rule_config_cache() -> None:
 # ------------------------------------------------------------------------------------------------ dựng engine
 
 
-def build_rule_engine(db: Session, config: RuleConfig | None = None, *, before: datetime | None = None) -> RuleEngine:
+def build_rule_engine(
+    db: Session, config: RuleConfig | None = None, *, before: datetime | None = None, context: LoginContext | None = None
+) -> RuleEngine:
     """`RuleEngine` cho MỘT lần chấm. `store`: `RedisStore` dựng MỖI LẦN gọi trên `rate_counter.redis_client` hiện tại
     (không giữ client thành singleton ở module này — test thay `rate_counter.redis_client` bằng fakeredis qua
     `monkeypatch`, giữ singleton sẽ lỡ mất bản thay đó; dựng lại object `RedisStore` không tốn kém, chỉ giữ tham chiếu).
     Tiền tố khoá "rule:" (state.py) không đụng khoá của `rate_counter`. `intel` dùng chung/singleton (nạp một lần lúc
-    khởi động). `history`, `stats`, `blocklist` dựng mới từ DB (rẻ, luôn đúng — xem docstring module). `before`: mốc
-    "trước đó" cho lịch sử, mặc định là hiện tại. `config=None` (mặc định): đọc `rule_overrides` qua
-    `refresh_rule_config` (MR17) — truyền tay một `RuleConfig` khác (vd hiệu chỉnh/replay ngoại tuyến, MR9-10) để BỎ
-    QUA ghi đè của quản trị viên."""
+    khởi động). `before`: mốc "trước đó" cho lịch sử, mặc định là hiện tại. `context` (MR20): ngữ cảnh đã dựng cho chính
+    lần thử sắp chấm — lịch sử tài khoản và đếm toàn cục lấy thẳng từ đó, không truy vấn lại; không có thì đọc DB/bộ đếm
+    dùng chung khi luật cần. `config=None` (mặc định): đọc `rule_overrides` qua `refresh_rule_config` (MR17) — truyền
+    tay một `RuleConfig` khác (vd hiệu chỉnh/replay ngoại tuyến, MR9-10) để BỎ QUA ghi đè của quản trị viên."""
     before = ensure_utc(before) if before is not None else datetime.now(timezone.utc)
     store = RedisStore(rate_counter.redis_client)
     resolved_config = refresh_rule_config(db) if config is None else config
-    return RuleEngine(resolved_config, store=store, history=DbAccountHistory(db, before), intel=_get_threat_intel(), blocklist=refresh_blocklist(db), stats=DbGlobalStats(db))
+    history = DbAccountHistory(db, before)
+    stats = SharedGlobalStats(db, before)
+    if context is not None:
+        if context.attempt.user_key is not None:
+            history.preloaded[context.attempt.user_key] = context.account_history
+        stats.counts = context.summary.global_counts
+    return RuleEngine(resolved_config, store=store, history=history, intel=_get_threat_intel(), blocklist=refresh_blocklist(db), stats=stats)

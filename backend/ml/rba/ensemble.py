@@ -89,6 +89,13 @@ class HybridMinTail:
         names = np.array([c.name for c in self.components])
         return names[self._tails(frame).argmin(axis=1)]
 
+    def score_with_trigger(self, frame: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+        """`(__call__(frame), triggered_by(frame))` từ MỘT lần chạy các bộ phát hiện. Luồng thật cần cả hai cho cùng
+        một lần thử; gọi riêng hai hàm kia chạy cả ba mô hình hai lần (đo ở MR20: ~50 ms thừa mỗi lần đăng nhập)."""
+        tails = self._tails(frame)
+        names = np.array([c.name for c in self.components])
+        return -np.log10(tails.min(axis=1)), names[tails.argmin(axis=1)]
+
 
 @dataclass
 class IsotonicCalibrator:

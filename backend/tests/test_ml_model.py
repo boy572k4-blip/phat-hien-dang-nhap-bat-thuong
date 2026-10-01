@@ -11,6 +11,7 @@ def _reset_module_cache():
     ml_model._load_attempted = False
     ml_model._scaler = None
     ml_model._iso_forest = None
+    ml_model._fast_forest = None
     ml_model._meta = None
 
 
@@ -39,6 +40,28 @@ def test_predict_works_with_real_trained_model_if_present():
     assert result is not None
     assert isinstance(result["is_anomaly"], bool)
     assert isinstance(result["anomaly_score"], float)
+    _reset_module_cache()
+
+
+def test_predict_matches_sklearn_predict_and_score_samples_exactly_if_trained():
+    """MR20: predict() chấm MỘT lần qua bộ chấm nhanh thay cho predict() + score_samples() của sklearn — cờ bất thường
+    và điểm phải giống hệt cách cũ trên nhiều vector khác nhau, không chỉ đúng dạng."""
+    import numpy as np
+
+    _reset_module_cache()
+    if not ml_model.is_available():
+        import pytest
+
+        pytest.skip("Chưa train model ML")
+    assert ml_model._fast_forest is not None  # bộ chấm nhanh qua được kiểm tra trùng khớp với model thật
+
+    rng = np.random.default_rng(7)
+    for _ in range(50):
+        features = {name: float(v) for name, v in zip(FEATURE_NAMES, rng.normal(scale=3.0, size=len(FEATURE_NAMES)))}
+        scaled = ml_model._scaler.transform(np.array([[features[name] for name in FEATURE_NAMES]]))
+        result = ml_model.predict(features)
+        assert result["is_anomaly"] == (ml_model._iso_forest.predict(scaled)[0] == -1)
+        assert result["anomaly_score"] == float(-ml_model._iso_forest.score_samples(scaled)[0])
     _reset_module_cache()
 
 

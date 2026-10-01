@@ -63,6 +63,30 @@ def test_login_nonexistent_account_returns_401_and_logs_null_user(client, db_ses
     assert event.attempted_username == "ghost"
 
 
+def test_password_check_runs_off_the_event_loop(client, db_session, monkeypatch):
+    """MR20: bcrypt (~230 ms CPU) không được chạy trên vòng lặp sự kiện của hàm `async` /login — nếu chạy ở đó, mọi request
+    đăng nhập đồng thời phải xếp hàng chờ nhau. Trong luồng của threadpool không có vòng lặp nào đang chạy."""
+    import asyncio
+
+    from app.security import verify_password
+
+    seen = []
+
+    def spy(password, password_hash):
+        try:
+            asyncio.get_running_loop()
+            seen.append("event-loop")
+        except RuntimeError:
+            seen.append("threadpool")
+        return verify_password(password, password_hash)
+
+    monkeypatch.setattr("app.routers.auth.verify_password", spy)
+    _create_user(db_session, "dave")
+    assert client.post("/login", json={"username": "dave", "password": PASSWORD}).status_code == 200
+    assert client.post("/login", json={"username": "dave", "password": "SaiRoi"}).status_code == 401
+    assert seen == ["threadpool", "threadpool"]
+
+
 def test_login_error_message_identical_for_wrong_password_and_unknown_user(client, db_session):
     """Không lộ thông tin tài khoản có tồn tại hay không (docs/api-contract.md mục 3)."""
     _create_user(db_session, "carol")

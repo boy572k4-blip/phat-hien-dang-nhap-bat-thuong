@@ -1,8 +1,8 @@
 """Đo độ trễ trong tiến trình (MR12: "đo độ trễ p50/p95/p99 và tải").
 
 Vòng đệm có giới hạn (`deque(maxlen=...)`) theo từng "giai đoạn" (`stage`) — không giữ vô hạn số đo, không cần DB/Redis
-riêng. Dùng ở `app/detection/pipeline.py` để đo TOÀN BỘ pipeline nền (`"pipeline"`) và từng bước con (`"rba_features"`,
-`"rule_engine"`, `"hybrid"`) để biết bước nào chiếm thời gian nhất khi cần tối ưu.
+riêng. Dùng ở `app/detection/pipeline.py` để đo TOÀN BỘ pipeline nền (`"pipeline"`) và từng bước con (`"login_context"`,
+`"rule_engine"`, `"rba_features"`, `"ml_inference"`, `"hybrid"`) để biết bước nào chiếm thời gian nhất khi cần tối ưu.
 
     from app.detection.perf import timer, snapshot
 

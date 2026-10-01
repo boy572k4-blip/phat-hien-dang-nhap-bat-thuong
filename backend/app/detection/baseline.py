@@ -14,6 +14,7 @@ from __future__ import annotations
 import statistics
 from datetime import datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import KnownDevice, KnownLocation, LoginEvent, User, UserBaseline
@@ -43,18 +44,26 @@ def update_baseline_after_successful_login(db: Session, user: User, event: Login
     """Gọi sau khi đã flush login_events cho MỘT lần đăng nhập THÀNH CÔNG."""
     baseline = db.query(UserBaseline).filter(UserBaseline.user_id == user.id).first()
     if baseline is None:
-        baseline = UserBaseline(user_id=user.id, successful_login_count=0, first_login_at=event.created_at)
-        db.add(baseline)
-        # Session dùng autoflush=False (app/database.py) — flush ngay để lần
-        # gọi TIẾP THEO trong cùng session (VD vòng lặp backfill nhiều sự
-        # kiện của cùng 1 user) nhìn thấy bản ghi này qua query thay vì tạo
-        # trùng khoá chính user_id (đã ăn UniqueViolation thật khi test).
-        db.flush()
+        # Session dùng autoflush=False (app/database.py) — flush ngay (khi thoát khối SAVEPOINT) để lần gọi TIẾP THEO
+        # trong cùng session (VD vòng lặp backfill nhiều sự kiện của cùng 1 user) nhìn thấy bản ghi này qua query thay
+        # vì tạo trùng khoá chính user_id (đã ăn UniqueViolation thật khi test).
+        # MR20: request KHÁC của cùng tài khoản (đăng nhập đồng thời) cũng có thể vừa thấy "chưa có" và chèn trước —
+        # đo 10 request đồng thời vào một tài khoản mới: 9/10 request lỗi 500 vì trùng khoá. Chèn trong SAVEPOINT, nếu
+        # trùng thì bỏ bản của mình và đọc lại dòng request kia đã ghi.
+        try:
+            with db.begin_nested():
+                baseline = UserBaseline(user_id=user.id, successful_login_count=0, first_login_at=event.created_at)
+                db.add(baseline)
+        except IntegrityError:
+            baseline = db.query(UserBaseline).filter(UserBaseline.user_id == user.id).one()
 
     if baseline.first_login_at is None:
         baseline.first_login_at = event.created_at
 
-    baseline.successful_login_count += 1
+    # Cộng ngay trong SQL (`SET successful_login_count = successful_login_count + 1`) thay vì đọc-sửa-ghi trong Python:
+    # hai lần đăng nhập đồng thời không làm mất lượt đếm của nhau.
+    baseline.successful_login_count = UserBaseline.successful_login_count + 1
+    db.flush()
 
     # Tính lại avg/stddev từ TOÀN BỘ lịch sử thành công — đơn giản, đủ tốt
     # cho quy mô đồ án (không cần công thức incremental online).
