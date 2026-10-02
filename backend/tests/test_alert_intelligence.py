@@ -4,6 +4,7 @@ tests/test_pipeline_mr13.py."""
 
 from app.detection.alert_intelligence import (
     DEDUP_WINDOW,
+    GEO_FAMILY,
     ML_COMPONENT_FAMILY,
     NoveltyFact,
     action_escalated,
@@ -135,6 +136,22 @@ def test_ml_is_used_only_when_there_is_no_rule_or_reputation_evidence_at_all():
     contributions = [Contribution("ml", "mô hình học máy", 0.4, "ml")]
     family, confidence = suggest_attack_family(_risk_result(contributions), ml_component="chiem_tai_khoan")
     assert family == COMPONENT_LABELS["chiem_tai_khoan"] and confidence == 0.4
+
+
+def test_the_geo_model_leading_suggests_the_geo_family_not_a_hybrid_cp2_component():
+    """MR22: khi chỉ có hai mô hình, mô hình dẫn đầu quyết định — `ml_component` là của hybrid_cp2, không áp cho `ml_geo`."""
+    geo = Contribution("ml_geo", "mô hình địa lý-thời gian", 0.38, "ml")
+    weaker_rba = Contribution("ml", "mô hình học máy", 0.2, "ml")
+    assert suggest_attack_family(_risk_result([geo, weaker_rba]), ml_component="chiem_tai_khoan") == (GEO_FAMILY, 0.38)
+
+    stronger_rba = Contribution("ml", "mô hình học máy", 0.5, "ml")  # hybrid_cp2 dẫn đầu thì vẫn dùng thành phần của nó
+    assert suggest_attack_family(_risk_result([stronger_rba, geo]), ml_component="chiem_tai_khoan") == (COMPONENT_LABELS["chiem_tai_khoan"], 0.5)
+
+
+def test_rule_evidence_still_wins_over_the_geo_model():
+    contributions = [Contribution("ml_geo", "mô hình địa lý-thời gian", 0.38, "ml"), Contribution("impossible_travel", "di chuyển", 0.1, "rule")]
+    family, _ = suggest_attack_family(_risk_result(contributions), ml_component=None)
+    assert family == REGISTRY["impossible_travel"].category
 
 
 # -------------------------------------------------------------------------------------------------------- ưu tiên

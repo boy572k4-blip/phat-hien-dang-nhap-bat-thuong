@@ -80,10 +80,10 @@ class LoginEvent(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    # Điền bởi detection engine (Tuần 4)
+    # Tuần 4–MR20: điểm cộng tay của tầng 2; từ MR21 bằng hybrid_risk_score (điểm rủi ro duy nhất, MR23 gộp hẳn hai cột)
     risk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Điểm bất thường từ ML tầng 3 (Tuần 7) — CHẠY SONG SONG risk_score, không
-    # thay thế. Càng cao càng bất thường theo Isolation Forest, thang không cố định.
+    # Điểm bất thường từ ML tầng 3 (Tuần 7). Càng cao càng bất thường theo Isolation Forest, thang không cố định. Từ MR22
+    # tầng 3 là nguồn `ml_geo` của hybrid (không còn alert riêng); cột vẫn ghi cho mọi lần thử vào tài khoản có thật, để tra cứu.
     ml_anomaly_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # --- MR12: parse UA + tra ASN trong pipeline nền, cùng schema với RBA (ml/rba/features.py) để đặc trưng
@@ -171,7 +171,8 @@ class Alert(Base):
     login_event_id: Mapped[int] = mapped_column(ForeignKey("login_events.id"), nullable=False, index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
-    # brute_force | credential_stuffing | impossible_travel | high_risk_score | ml_anomaly (Tuần 7) | hybrid_risk (MR12)
+    # brute_force | credential_stuffing | impossible_travel | high_risk_score | ml_anomaly (Tuần 7) | hybrid_risk (MR12).
+    # Từ MR22 chỉ còn tạo hybrid_risk; các loại khác chỉ có trong dữ liệu cũ (tầng 1-2 xoá ở MR21, ml_anomaly ở MR22).
     alert_type: Mapped[str] = mapped_column(String(32), nullable=False)
     # low | medium | high — ánh xạ từ risk_score theo mục 4.2 (<40 / 40-70 / >70)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)

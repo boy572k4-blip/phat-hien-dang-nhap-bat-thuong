@@ -19,7 +19,7 @@ import joblib
 from sqlalchemy.orm import Session
 
 from app.detection.engine.types import RuleHit
-from app.detection.hybrid import ActionBands, HybridProfile, RiskResult, RuleWeights, combine_risk
+from app.detection.hybrid import ActionBands, HybridProfile, RiskResult, RuleWeights, combine_risk, geo_probability
 from app.detection.model_registry import get_active
 from ml.rba.features import feature_signature
 
@@ -108,6 +108,19 @@ class HybridEngine:
             logger.exception("lỗi khi chấm điểm ML — bỏ qua thành phần ML cho lần thử này")
             return NO_ML
 
+    def ml_geo_probability(self, margin: float | None, slope: float | None) -> float | None:
+        """MR22 — biên độ của mô hình địa lý-thời gian (tầng 3, `ml_model.predict()["margin"]`) -> xác suất nguồn `ml_geo`
+        (`calibration.geo_probability`). Neo theo ngưỡng của NHÓM (`self.profile.bands`), không theo ngưỡng đã nới riêng
+        của một tài khoản (MR15) — để việc nới ngưỡng vẫn giảm được cảnh báo do nguồn này gây ra. `None` khi không chấm
+        (cold-start, chưa có mô hình/độ dốc). Không raise."""
+        if margin is None or slope is None:
+            return None
+        try:
+            return geo_probability(margin, slope, self.profile.bands)
+        except Exception:  # noqa: BLE001
+            logger.exception("lỗi khi đổi điểm tầng 3 sang xác suất — bỏ qua nguồn ml_geo cho lần thử này")
+            return None
+
     def ml_probability(self, features: dict[str, float] | None) -> float | None:
         """Xác suất tấn công đã hiệu chỉnh (0-1) từ 50 đặc trưng RBA, `None` nếu thiếu đặc trưng hoặc mô hình chưa sẵn sàng."""
         return self.ml_assessment(features).probability
@@ -118,7 +131,14 @@ class HybridEngine:
         return self.ml_assessment(features).component
 
     def evaluate(
-        self, features: dict[str, float] | None, hits: Iterable[RuleHit], *, bands: ActionBands | None = None, ml: MlAssessment | None = None
+        self,
+        features: dict[str, float] | None,
+        hits: Iterable[RuleHit],
+        *,
+        bands: ActionBands | None = None,
+        ml: MlAssessment | None = None,
+        ml_geo: float | None = None,
+        ml_geo_label: str | None = None,
     ) -> RiskResult:
         """Điểm 0-100 + hành động cho MỘT lần thử — không bao giờ raise (mọi lỗi rơi về `combine_risk` với `ml_probability=None`).
 
@@ -128,14 +148,18 @@ class HybridEngine:
         tính điểm 0-100 (điểm hiển thị cho mọi người xem vẫn nhất quán; chỉ NGƯỠNG QUYẾT ĐỊNH hành động khác nhau).
 
         `ml`: kết quả `ml_assessment` đã tính sẵn cho chính lần thử này (pipeline cần thành phần dẫn đầu nên tính trước
-        rồi truyền vào, tránh chạy mô hình lần thứ hai). `None` thì tự tính."""
+        rồi truyền vào, tránh chạy mô hình lần thứ hai). `None` thì tự tính. `ml_geo` (MR22): xác suất của nguồn địa
+        lý-thời gian (`ml_geo_probability`), `None` nếu không chấm; `ml_geo_label`: nhãn hiển thị của nguồn đó."""
         effective_bands = bands if bands is not None else self.profile.bands
         try:
             ml_probability = (ml if ml is not None else self.ml_assessment(features)).probability
         except Exception:  # noqa: BLE001 — phòng hờ kép, ml_assessment() đã tự bắt lỗi nhưng không đánh đổi độ an toàn
             ml_probability = None
         try:
-            return combine_risk(ml_probability=ml_probability, hits=hits, weights=self.profile.weights, bands=effective_bands)
+            return combine_risk(
+                ml_probability=ml_probability, hits=hits, weights=self.profile.weights, bands=effective_bands,
+                ml_geo_probability=ml_geo, ml_geo_label=ml_geo_label,
+            )
         except Exception:  # noqa: BLE001 — combine_risk là hàm thuần không nên lỗi, nhưng "không bao giờ raise" là bất biến của cả pipeline
             logger.exception("lỗi khi gộp điểm hybrid — coi như không có bằng chứng nào")
             return combine_risk(ml_probability=None, hits=(), weights=RuleWeights(), bands=effective_bands)

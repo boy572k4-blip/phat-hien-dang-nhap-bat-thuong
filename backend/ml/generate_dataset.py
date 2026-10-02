@@ -17,6 +17,12 @@ So với bản Tuần 3, thêm:
 Nhãn ground-truth lưu ở backend/ml/data/labels.csv (tách biệt khỏi
 login_events — không cheat khi đánh giá).
 
+MR22: TÁI LẬP ĐƯỢC — cố định random seed (`--seed`, mặc định `DEFAULT_SEED`)
+VÀ mốc thời gian (`--reference-time`, mặc định `DEFAULT_REFERENCE_TIME`).
+Trước MR22 mỗi lần chạy sinh dữ liệu ngẫu nhiên khác và lấy mốc là giờ hiện
+tại (đặc trưng `day_of_week` phụ thuộc NGÀY tuyệt đối) nên số đo giữa hai lần
+chạy không so sánh được (docs/model-b-geo-time.md, mục so sánh "trước/sau").
+
 Chạy:
     cd backend
     venv\\Scripts\\python.exe -m ml.generate_dataset --reset
@@ -38,6 +44,8 @@ from scripts.generate_historical_data import LOCATIONS, LOCATION_WEIGHTS, random
 
 USER_ID_START = 101
 TOTAL_USERS = 40  # user101-user140
+DEFAULT_SEED = 42
+DEFAULT_REFERENCE_TIME = datetime(2026, 9, 1, tzinfo=timezone.utc)  # "bây giờ" của tập dữ liệu: mọi lần đăng nhập nằm trong 90 ngày trước mốc này
 EXTENDED_DAYS_BACK = 90
 NORMAL_LOGINS_PER_USER_RANGE = (30, 55)
 SINGLE_ANOMALIES_PER_USER_RANGE = (1, 2)  # mỗi kiểu unusual_hour/location/device/combined
@@ -85,9 +93,8 @@ def _apply_time(ts: datetime, hour: float) -> datetime:
     return ts.replace(hour=int(hour), minute=random.randint(0, 59), second=random.randint(0, 59), microsecond=0)
 
 
-def make_normal_events(user: User, profile: dict, count: int) -> list[LoginEvent]:
+def make_normal_events(user: User, profile: dict, count: int, now: datetime) -> list[LoginEvent]:
     events = []
-    now = datetime.now(timezone.utc)
     country, city, lat, lon = profile["home_location"]
 
     for _ in range(count):
@@ -243,11 +250,12 @@ def reset_synthetic_data(db) -> None:
         print(f"Đã xoá {len(user_ids)} user (ML dataset) + toàn bộ login_events liên quan.")
 
 
-def main(reset: bool) -> None:
+def main(reset: bool, seed: int = DEFAULT_SEED, reference_time: datetime = DEFAULT_REFERENCE_TIME) -> None:
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     labels: list[tuple[int, str, bool, str]] = []
-    now = datetime.now(timezone.utc)
+    random.seed(seed)  # MỌI nguồn ngẫu nhiên của bộ sinh (kể cả random_ip của scripts/generate_historical_data) đi qua module `random`
+    now = reference_time
 
     try:
         if reset:
@@ -266,7 +274,7 @@ def main(reset: bool) -> None:
                 db.add(user)
                 db.flush()
 
-            normal_events = make_normal_events(user, profile, random.randint(*NORMAL_LOGINS_PER_USER_RANGE))
+            normal_events = make_normal_events(user, profile, random.randint(*NORMAL_LOGINS_PER_USER_RANGE), now)
 
             # MR18 "mô hình B": lọc bỏ mọi sự kiện GẦN ĐÂY trước khi thêm tái kích hoạt "ngủ đông" — nếu không, sự
             # kiện bình thường ngẫu nhiên rơi vào đúng vài chục ngày gần nhất (hoàn toàn có thể, normal_events rải đều
@@ -338,5 +346,10 @@ def main(reset: bool) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reset", action="store_true", help="Xoá dữ liệu ML cũ trước khi tạo lại")
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help=f"random seed (mặc định {DEFAULT_SEED}) — cùng seed + cùng mốc thời gian thì cùng dữ liệu")
+    parser.add_argument(
+        "--reference-time", type=datetime.fromisoformat, default=DEFAULT_REFERENCE_TIME, dest="reference_time",
+        help=f"mốc \"bây giờ\" của tập dữ liệu, ISO 8601 có múi giờ (mặc định {DEFAULT_REFERENCE_TIME.isoformat()})",
+    )
     args = parser.parse_args()
-    main(reset=args.reset)
+    main(reset=args.reset, seed=args.seed, reference_time=args.reference_time)

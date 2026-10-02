@@ -1,5 +1,8 @@
 # Mô hình B (địa lý-thời gian) — dữ liệu từ thư viện tấn công mô phỏng v2 (MR18)
 
+> Từ MR22 mô hình này là nguồn bằng chứng `ml_geo` của hybrid risk engine (không còn alert `ml_anomaly` riêng), có cổng
+> cold-start, và dữ liệu sinh với seed cố định — xem [`geo-model-integration.md`](geo-model-integration.md).
+
 `docs/checklist.md` MR6 ghi: "Mô hình B (địa lý-thời gian) chuyển sang MR18: cần thư viện kịch bản tấn công của MR18
 và simulator hiện tại (`ml/generate_dataset.py`) dựa trên DB". "Mô hình B" **không phải một mô hình xây MỚI** — chính
 là tầng 3 đã có từ Tuần 7 (Isolation Forest/LOF/Autoencoder, [`docs/ml-evaluation.md`](ml-evaluation.md)), đặc trưng
@@ -33,42 +36,45 @@ Chỉ 2 kịch bản có tín hiệu ĐÚNG phạm vi geo/time của tầng 3:
 
 ## Kết quả — recall theo kiểu bất thường (Isolation Forest, tốt nhất trong 3 mô hình, tập test)
 
-| Kiểu bất thường | Số ca (test) | Recall |
-|---|---|---|
-| `dormant_reactivation` (MỚI) | 13 | **100%** |
-| `impossible_travel_geo` (MỚI) | 19 | **63,2%** |
-| `unusual_hour+unusual_location` | 8 | 100% |
-| `unusual_device+unusual_hour` | 5 | 100% |
-| `unusual_device+unusual_location` | 11 | 90,9% |
-| `unusual_location` | 18 | 88,9% |
-| `unusual_hour` | 17 | 58,8% |
-| `unusual_device` | 23 | 39,1% |
-| `rapid_fire` | 20 | 0% |
+Số của bộ dữ liệu sinh với seed cố định (MR22, tái lập được — `python -m ml.evaluate` →
+`ml/artifacts/evaluation_geo_by_type.csv`). Hai cột: điểm làm việc đã công bố từ Tuần 7 (gắn cờ 14,2% điểm cao nhất của
+tập test) và ngưỡng của chính mô hình — ngưỡng mà luồng thật dùng (trước MR22 cho alert `ml_anomaly`, từ MR22 là mốc của
+nguồn `ml_geo` trong hybrid: [`geo-model-integration.md`](geo-model-integration.md)).
 
-**2 kiểu MỚI hoạt động tốt** — `dormant_reactivation` bắt được TOÀN BỘ, `impossible_travel_geo` ngang `unusual_hour`.
-Hợp lý: cả hai đều có tín hiệu THỜI GIAN cực đoan (khoảng cách giờ/phút rất lớn hoặc rất nhỏ so với phân phối thường
-thấy), loại tín hiệu Isolation Forest vốn đã mạnh nhất (`docs/ml-evaluation.md`: yếu nhất ở `rapid_fire`/`unusual_device`
-đơn lẻ, mạnh nhất ở tín hiệu đơn giản/cực đoan).
+| Kiểu bất thường | Số ca (test) | Recall (điểm đã công bố) | Recall (ngưỡng mô hình = luồng thật) |
+|---|---|---|---|
+| `dormant_reactivation` (MỚI) | 13 | **100%** | **100%** |
+| `impossible_travel_geo` (MỚI) | 18 | **55,6%** | **66,7%** |
+| `unusual_hour+unusual_location` | 9 | 100% | 100% |
+| `unusual_device+unusual_hour` | 5 | 100% | 100% |
+| `unusual_device+unusual_location` | 4 | 75% | 75% |
+| `unusual_location` | 18 | 72,2% | 77,8% |
+| `unusual_hour` | 18 | 72,2% | 94,4% |
+| `unusual_device` | 28 | 46,4% | 57,1% |
+| `rapid_fire` | 13 | 0% | 0% |
+| **Tổng** / báo nhầm | 126 / 435 | 62,7% / 0,2% | 70,6% / 1,6% |
 
-## ⚠️ Giới hạn quan trọng: không so sánh "trước/sau" được chính xác
+**2 kiểu MỚI hoạt động tốt** — `dormant_reactivation` bắt được TOÀN BỘ, `impossible_travel_geo` ở mức của
+`unusual_location`. Hợp lý: cả hai đều có tín hiệu THỜI GIAN/KHOẢNG CÁCH cực đoan (khoảng cách giờ/phút rất lớn hoặc rất
+nhỏ so với phân phối thường thấy), loại tín hiệu Isolation Forest vốn đã mạnh nhất (`docs/ml-evaluation.md`: yếu nhất ở
+`rapid_fire`/`unusual_device` đơn lẻ, mạnh nhất ở tín hiệu đơn giản/cực đoan).
 
-`ml/generate_dataset.py` **không cố định random seed** — mỗi lần chạy `--reset` sinh lại dữ liệu NGẪU NHIÊN khác
-(hồ sơ user, giờ/vị trí cụ thể của từng lần bất thường...). Số liệu MỚI đo được cho 5 kiểu GỐC trong lần chạy CÙNG với
-2 kiểu MR18 (**56,9% recall gộp**, tính riêng — xem bên dưới) THẤP HƠN số đã công bố ở Tuần 7 (`ml-evaluation.md`:
-78,3% recall tổng, `unusual_hour`/`unusual_location` 100%) — nhưng đây RẤT CÓ THỂ là dao động ngẫu nhiên giữa hai lần
-chạy độc lập (mẫu mỗi kiểu chỉ 13-62 ca), KHÔNG PHẢI bằng chứng "thêm 2 kiểu mới làm hỏng mô hình". Tách riêng để kiểm
-tra trực tiếp trên CHÍNH lần chạy này:
+## So sánh "trước/sau" — đã có seed, chưa chạy cấu hình đối chứng
 
-- Recall trên 5 kiểu GỐC (không tính 2 kiểu MR18): **56,9%** (58/102 ca)
-- Recall trên 2 kiểu MR18: **78,1%** (25/32 ca)
+Bản MR18 của tài liệu này ghi: `ml/generate_dataset.py` **không cố định random seed**, nên số đo giữa hai lần chạy (vd
+56,9% recall trên 5 kiểu gốc trong lần chạy MR18 so với 78,3% của Tuần 7) không so sánh được — nhiều khả năng là dao động
+ngẫu nhiên (mẫu 13–62 ca mỗi kiểu), không phải "thêm 2 kiểu mới làm hỏng mô hình". Trong chính lần chạy đó, 2 kiểu MR18
+còn có recall cao hơn 5 kiểu gốc (78,1% so với 56,9%).
 
-2 kiểu MỚI không hề kéo tụt kết quả — NGƯỢC LẠI, cao hơn 5 kiểu gốc TRONG CHÍNH lần chạy này. Kết luận công bằng nhất:
-**không đủ căn cứ để so sánh chính xác trước/sau** khi thiếu seed cố định; muốn so sánh đúng cần cố định seed (chưa
-làm — ngoài phạm vi MR18, để lại cho lần sau) rồi chạy lại CẢ hai cấu hình (có/không 2 kiểu mới) trên CÙNG một seed.
+MR22 đã cố định seed **và** mốc thời gian (`--seed`, `--reference-time`): số trong bảng trên chạy lại ra đúng như vậy. Trên
+bộ dữ liệu này, recall theo điểm đã công bố: 5 kiểu gốc 58,9% (56/95), 2 kiểu MR18 74,2% (23/31) — cùng xu hướng với lần
+chạy MR18 (theo ngưỡng mô hình: 67,4% và 80,6%). Phép đối chứng đúng
+nghĩa — cùng seed, sinh dữ liệu **có** và **không có** 2 kiểu mới, so 5 kiểu gốc — giờ làm được nhưng **chưa chạy** (không
+thuộc phạm vi MR22).
 
 ## Giới hạn khác
 
-- Mẫu nhỏ (13-19 ca/kiểu mới) — đủ để thấy xu hướng, không đủ cho khoảng tin cậy chặt.
+- Mẫu nhỏ (13-18 ca/kiểu mới trong tập test) — đủ để thấy xu hướng, không đủ cho khoảng tin cậy chặt.
 - `dormant_reactivation` dùng khoảng cách 35 ngày (không phải 90 ngày như `dormant_account_login` của rule engine,
   MR9) — tầng 3 không có ngưỡng cứng, chỉ cần lệch rõ so với phân phối khoảng cách thường thấy (~2-3 ngày/lần trên
   90 ngày, 30-55 lần/user) để mô hình học được; không nhằm khớp số của một luật ở tầng khác.

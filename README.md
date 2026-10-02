@@ -7,7 +7,9 @@ hybrid học từ dữ liệu học thuật RBA, cùng mô hình địa lý-th�
 một điểm rủi ro và một hành động — cho qua / cảnh báo / xác thực thêm / khoá tạm
 — hiện gần như tức thời trên dashboard, thay vì chỉ xác thực đúng/sai mật khẩu
 như một web app thông thường. Tầng 1 (luật đếm riêng, Tuần 3) và tầng 2 (cộng
-điểm tay, Tuần 4) đã gộp vào bộ luật ở MR21 — [`docs/rule-unification.md`](docs/rule-unification.md).
+điểm tay, Tuần 4) đã gộp vào bộ luật ở MR21 — [`docs/rule-unification.md`](docs/rule-unification.md);
+mô hình địa lý-thời gian (tầng 3) thành nguồn bằng chứng của hybrid ở MR22, không còn cảnh báo riêng —
+[`docs/geo-model-integration.md`](docs/geo-model-integration.md).
 Toàn cảnh cơ chế nào bắt hành vi nào: [`docs/behavior-coverage-matrix.md`](docs/behavior-coverage-matrix.md).
 
 Tiến độ triển khai theo hai giai đoạn: **Tuần 1-8** (khung hệ thống, xem "Trạng
@@ -103,7 +105,8 @@ Mở `http://localhost:5173` — `/login` là web app mẫu, `/admin/login` là 
 - **Lỗi 2 (đã sửa):** bản đồ vẽ đúng marker + đường nối nhưng nằm ngoài khung nhìn mặc định (center Việt Nam) khi toạ độ ở xa — trông như không vẽ gì. `MapPanel.jsx` thêm tự động `fitBounds()`.
 - Bảng test case đầy đủ + phân loại lỗi: [`docs/e2e-test-report.md`](docs/e2e-test-report.md). Hệ thống chạy liên tục không lỗi suốt phiên kiểm thử.
 
-✅ **Tuần 7 hoàn thành (7.1 + 7.2) — ĐIỂM NHẤN CHÍNH của đồ án**, đầu tư sâu hơn hẳn "tuỳ chọn" ban đầu:
+✅ **Tuần 7 hoàn thành (7.1 + 7.2) — ĐIỂM NHẤN CHÍNH của đồ án**, đầu tư sâu hơn hẳn "tuỳ chọn" ban đầu (số dưới đây là của
+Tuần 7, dữ liệu chưa cố định seed; số hiện tại, tái lập được từ MR22, ở [`docs/ml-evaluation.md`](docs/ml-evaluation.md)):
 - **5 kiểu bất thường** (không chỉ 2 như Tuần 3): giờ lạ, vị trí lạ, thiết bị lạ, tốc độ đăng nhập bất thường, kết hợp nhiều tín hiệu — 40 user riêng, 1846 bản ghi, 15.2% có nhãn bất thường.
 - **3 thuật toán ML** so sánh công bằng trên cùng tập test tách theo thời gian (không rò rỉ dữ liệu tương lai): Isolation Forest (F1=0.751, ROC-AUC=0.882), Local Outlier Factor (F1=0.717), Autoencoder (F1=0.612) — cả 3 **vượt xa** tầng 2 hành vi cũ (F1=0.070, gần như "im lặng hoàn toàn", chỉ bắt 3/83 ca).
 - **So sánh trên chính hàm sản xuất thật** (`compute_risk_score()`), không viết lại song song — phát hiện nguyên nhân gốc rễ: tầng 2 không có trọng số cho thiết bị lạ/tốc độ bất thường, và baseline giờ bị "pha loãng" theo thời gian (hạn chế thật trong production, không phải lỗi đánh giá).
@@ -124,9 +127,9 @@ venv\Scripts\python.exe -m scripts.backfill_baseline                      # tín
 venv\Scripts\python.exe -m scripts.create_admin --username admin --password "MatKhauManh123!"   # tạo tài khoản admin (Tuần 5)
 
 # ML tầng 3 (Tuần 7) — dữ liệu RIÊNG (user101-140), không đụng dữ liệu demo dashboard ở trên
-venv\Scripts\python.exe -m ml.generate_dataset --reset    # 40 user, 5 kiểu bất thường
+venv\Scripts\python.exe -m ml.generate_dataset --reset    # 40 user, 7 kiểu bất thường, seed cố định (MR22)
 venv\Scripts\python.exe -m ml.extract_features             # trích đặc trưng (chống rò rỉ dữ liệu tương lai)
-venv\Scripts\python.exe -m ml.train                         # huấn luyện 3 mô hình
+venv\Scripts\python.exe -m ml.train                         # huấn luyện 3 mô hình (+ độ dốc ml_geo, bảng cold-start)
 venv\Scripts\python.exe -m ml.evaluate                      # so sánh + xuất biểu đồ vào docs/figures/
 ```
 

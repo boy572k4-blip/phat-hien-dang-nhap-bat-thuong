@@ -5,7 +5,7 @@ import joblib
 import pytest
 
 from app.detection import hybrid_runtime, model_registry
-from app.detection.hybrid import ActionBands
+from app.detection.hybrid import ActionBands, geo_probability
 from app.detection.hybrid.calibration import HybridProfile, MonotonicCalibrator, RuleWeights
 from app.models import ModelRegistryEntry
 
@@ -125,6 +125,32 @@ def test_evaluate_falls_back_to_no_evidence_when_combining_the_real_hits_blows_u
 def test_singleton_get_engine_returns_the_same_instance():
     a, b = hybrid_runtime.get_engine(), hybrid_runtime.get_engine()
     assert a is b
+
+
+# --------------------------------------------------------------------------------------- ml_geo (MR22)
+
+
+def test_ml_geo_probability_is_none_when_there_is_nothing_to_score(engine):
+    assert engine.ml_geo_probability(None, 48.0) is None  # tầng 3 chưa nạp được
+    assert engine.ml_geo_probability(0.05, None) is None  # mô hình train trước MR22: không có độ dốc
+
+
+def test_ml_geo_probability_anchors_on_the_group_bands(engine):
+    """Neo theo ngưỡng NHÓM của hồ sơ, không theo ngưỡng đã nới riêng của tài khoản (MR15) — nới ngưỡng vẫn phải giảm
+    được cảnh báo do nguồn này gây ra."""
+    engine.profile = HybridProfile(RuleWeights(), ActionBands(alert_at=32, step_up_at=58, lock_at=70), None)
+    assert engine.ml_geo_probability(0.0, 48.0) == pytest.approx(0.32)
+    assert engine.ml_geo_probability(0.0, 48.0) == pytest.approx(geo_probability(0.0, 48.0, engine.profile.bands))
+
+    looser = ActionBands(alert_at=40, step_up_at=65, lock_at=85)
+    result = engine.evaluate(None, [], bands=looser, ml_geo=engine.ml_geo_probability(0.01, 48.0))
+    assert result.action == "allow"  # cùng bằng chứng, ngưỡng riêng đã nới -> không còn cảnh báo
+
+
+def test_evaluate_passes_the_geo_source_and_its_label_through(engine):
+    result = engine.evaluate(None, [], ml_geo=0.5, ml_geo_label="mô hình địa lý-thời gian: vị trí mới ↑")
+    assert result.ml_geo_probability == 0.5 and result.score == 50
+    assert [(c.source, c.label) for c in result.contributions] == [("ml_geo", "mô hình địa lý-thời gian: vị trí mới ↑")]
 
 
 # --------------------------------------------------------------------------------------- ml_component (MR13)

@@ -449,12 +449,32 @@ Các mục dưới đây đổi mô hình hoặc quy tắc nên cần đồng ý
     chế, không mất). Khoảng trống đã biết (dò danh sách, bot UA, Tor/datacenter/VPN...) vẫn còn — MR25, MR27–MR30
   - ⚠️ Đánh đổi ghi nhận: không còn đường dự phòng tầng 1 khi khối hybrid lỗi (một đường duy nhất); tổ hợp "lệch giờ + vị trí
     lạ" của tầng 2 không còn cảnh báo riêng (vẫn do tầng 3 chấm); điểm hiển thị của `blocklist_hit` từ 100 thành `lock_at`
-- [ ] **MR22 [Lõi, M] Một lớp ML: mô hình địa lý-thời gian (tầng 3) thành nguồn bằng chứng của hybrid** (tuần 1)
-  - [ ] Điểm Isolation Forest tầng 3 → xác suất đã hiệu chỉnh (val của dữ liệu tự sinh) → nguồn `ml_geo` trong noisy-OR, cạnh
-    `hybrid_cp2`
-  - [ ] Cổng cold-start: không chấm tài khoản có ít hơn N lần thành công — sửa lỗi `ml_anomaly` báo gần như mọi tài khoản mới
-    (đo ở MR18)
-  - [ ] Cố định random seed của `ml/generate_dataset.py` (tồn từ MR18) để số đo tái lập được
+- [x] **MR22 [Lõi, M] Một lớp ML: mô hình địa lý-thời gian (tầng 3) thành nguồn bằng chứng của hybrid** (tuần 1)
+  — chi tiết và số đo: [`geo-model-integration.md`](geo-model-integration.md)
+  - [x] Điểm Isolation Forest tầng 3 → xác suất → nguồn `ml_geo` của hybrid, cạnh `hybrid_cp2`. Đường logistic: độ dốc học trên
+    điểm ngoài mẫu (5-fold) của tập train đã qua cổng (48,22), mốc neo ở ngưỡng của chính mô hình = ngưỡng `alert`, trần 0,382
+    (một mình chỉ cảnh báo; thêm một tín hiệu độc lập đáng cảnh báo mới thành `step_up`). Không dùng thẳng isotonic: dữ liệu tự
+    sinh thổi phồng xác suất (báo nhầm 4,8% ở ngưỡng alert, 47,6% ca bất thường lên 1,0). **Hai mô hình gộp bằng max**, không
+    noisy-OR (dùng chung tín hiệu thiết bị/vị trí mới; bản đầu dùng noisy-OR + trần 0,57 thì "đổi điện thoại + đi công tác" bị
+    KHOÁ, và bằng chứng dưới ngưỡng chồng lên nền ~0,29 của `hybrid_cp2` với IP Việt Nam đẩy báo nhầm từ 1,6% lên 8,0%).
+    Không còn alert `ml_anomaly`; nhãn của nguồn mang các đặc trưng lệch nhất (`ml_model.explain`)
+  - [x] Cổng cold-start N = 5 lần thành công trước đó, chọn bằng số đo: đăng nhập bình thường bị gắn cờ 100% (0 lần), 24,2% (1),
+    2,4% (5–9), < 1% (≥ 10). Cái giá: 28/304 ca bất thường (9,2%) trong vùng đó không còn được tầng 3 chấm — ở đó độ chính xác
+    của cờ chỉ 26,5% (qua cổng 93,7%)
+  - [x] Cố định random seed **và** mốc thời gian của `ml/generate_dataset.py`; dữ liệu sinh lại (1.815 lần đăng nhập, 304 bất
+    thường) tái lập đúng; số trong `ml-evaluation.md`/`model-b-geo-time.md` cập nhật theo bộ này
+  - **Kết quả**: trên tập test, quyết định của `ml_geo` trùng hoàn toàn ngưỡng mô hình mà `ml_anomaly` dùng — recall **70,6%**,
+    báo nhầm **1,6%**, `dormant_reactivation` 100%, `impossible_travel_geo` 66,7% (giữ nguyên). 20 kịch bản qua pipeline thật
+    (commit MR21 vs MR22, cùng mô hình, cùng bộ chạy): không kịch bản nào mất/muộn phát hiện; **tài khoản mới hợp lệ không còn
+    bị báo**; cảnh báo 74 → 44 hàng; rải mật khẩu chậm và proxy cùng nước từ "chỉ `ml_anomaly`, hybrid cho qua" thành `alert`;
+    nhồi thông tin `alert` → `step_up`; không kịch bản nào lên `lock` vì tầng 3. **804/804** test
+  - ⚠️ Tìm ra khi đo: bộ chạy kịch bản (`_insert_baseline`, dùng chung MR18/MR21) dựng lịch sử nền không ghi
+    `known_devices`/`known_locations`/`user_baseline` → tầng 3 thấy mọi tài khoản kịch bản là "lạ" (caveat "`ml_anomaly` gần như
+    luôn kêu" một phần do lỗi này; phần luật/hybrid đo lại giống hệt) — đã sửa, cùng lỗi trong test MR13; khối khoá tự động MR16
+    so `expires_at` không múi giờ (SQLite) → `TypeError` — đã sửa
+  - ⚠️ Còn lại: ngày đầu của kịch bản "đăng nhập theo thói quen" vẫn bị `hybrid_cp2` cảnh báo (0,50, có từ trước MR22 → MR26);
+    tầng 3 vẫn chấm cả lần thử sai như trước dù chỉ học trên lần thành công (chưa đo riêng); phép đối chứng có/không 2 kiểu MR18
+    trên cùng seed giờ làm được nhưng chưa chạy
   - Xong khi: recall các kiểu địa lý-thời gian giữ nguyên hoặc ghi rõ thay đổi; kịch bản tài khoản mới hợp lệ không bị báo
 - [ ] **MR23 [Lõi, M] Một sự cố = một cảnh báo, một điểm rủi ro** (đầu tuần 2)
   - [ ] Viết lại `pipeline.py` (538 dòng) theo 5 bước: ngữ cảnh → luật → ML → gộp điểm → hành động/cảnh báo. Chống trùng lặp

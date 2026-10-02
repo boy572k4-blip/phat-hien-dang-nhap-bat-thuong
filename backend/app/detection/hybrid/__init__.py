@@ -9,13 +9,25 @@
     print(result.score, result.action, [c.source for c in result.contributions[:3]])
 
 Cách hiệu chỉnh trọng số/ngưỡng từ RBA và số đo: `ml/rba/hybrid_calibrate.py`, tài liệu `docs/hybrid-risk-engine.md`.
-CHƯA nối vào `app/detection/pipeline.py` — việc đó cùng phần nạp model theo phiên bản là của MR12.
+Luồng thật: `app/detection/hybrid_runtime.py` (MR12). Hai nguồn ML: mô hình `hybrid_cp2` (RBA) và, từ MR22, mô hình địa
+lý-thời gian (tầng 3) qua `geo_probability` — nguồn `ml_geo`.
 """
 
-from app.detection.hybrid.calibration import ACTIONS, HybridConfigError, ActionBands, HybridProfile, MonotonicCalibrator, RuleWeightEntry, RuleWeights
-from app.detection.hybrid.combine import REPUTATION_CATEGORY, Contribution, RiskResult, combine_risk, noisy_or
+from app.detection.hybrid.calibration import (
+    ACTIONS,
+    ActionBands,
+    HybridConfigError,
+    HybridProfile,
+    MonotonicCalibrator,
+    RuleWeightEntry,
+    RuleWeights,
+    geo_cap,
+    geo_probability,
+)
+from app.detection.hybrid.combine import GEO_LABEL, REPUTATION_CATEGORY, Contribution, RiskResult, combine_risk, noisy_or
 
 __all__ = [
-    "ACTIONS", "ActionBands", "Contribution", "HybridConfigError", "HybridProfile", "MonotonicCalibrator", "REPUTATION_CATEGORY",
-    "RiskResult", "RuleWeightEntry", "RuleWeights", "combine_risk", "noisy_or",
+    "ACTIONS", "ActionBands", "Contribution", "GEO_LABEL", "HybridConfigError", "HybridProfile", "MonotonicCalibrator",
+    "REPUTATION_CATEGORY", "RiskResult", "RuleWeightEntry", "RuleWeights", "combine_risk", "geo_cap", "geo_probability",
+    "noisy_or",
 ]

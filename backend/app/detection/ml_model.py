@@ -1,15 +1,19 @@
-"""Tầng 3 — ML (nhiệm vụ 7.1), chạy SONG SONG tầng 1 (rule) và tầng 2
-(behavioral scoring), KHÔNG THAY THẾ — đúng yêu cầu checklist gốc.
+"""Tầng 3 — ML địa lý-thời gian (nhiệm vụ 7.1). Từ MR22 KHÔNG còn tạo alert
+`ml_anomaly` riêng: là nguồn bằng chứng `ml_geo` của hybrid risk engine —
+`predict()` trả biên độ so với ngưỡng quyết định của mô hình, pipeline đổi
+sang xác suất qua `app.detection.hybrid.calibration.geo_probability` (độ dốc
+`geo_slope()`) và chỉ chấm tài khoản đã có ít nhất `cold_start_min_successes()`
+lần đăng nhập thành công (cổng cold-start, xem ml/train.py).
 
 Dùng model Isolation Forest đã huấn luyện ở backend/ml/train.py. Nếu chưa
 train (chưa chạy `python -m ml.train`), module tự chuyển sang "không khả
 dụng" — không raise lỗi, không chặn luồng đăng nhập (giống triết lý xử lý
 lỗi của app/detection/geoip.py).
 
-⚠️ Đây là tầng THAM KHẢO — xem docs/ml-evaluation.md mục 5 (giới hạn thật):
-huấn luyện trên dữ liệu tự sinh, chưa qua kiểm định với dữ liệu tấn công
-thật. Alert loại `ml_anomaly` nên được đọc như một gợi ý, không phải kết
-luận chắc chắn.
+⚠️ Giới hạn thật — xem docs/ml-evaluation.md mục 5: huấn luyện trên dữ liệu
+tự sinh, chưa qua kiểm định với dữ liệu tấn công thật. Vì vậy xác suất
+`ml_geo` bị chặn trên dưới ngưỡng `step_up`: một mình mô hình này chỉ đủ để
+cảnh báo, không đủ để chặn hay khoá (xem `geo_probability`).
 """
 
 from __future__ import annotations
@@ -83,8 +87,9 @@ def is_available() -> bool:
 
 
 def predict(features: dict) -> dict | None:
-    """Trả {"is_anomaly": bool, "anomaly_score": float} hoặc None nếu model
-    chưa sẵn sàng. Không bao giờ raise — mọi lỗi được nuốt và log lại.
+    """Trả {"is_anomaly": bool, "anomaly_score": float, "margin": float} hoặc None nếu model chưa sẵn sàng. `margin` =
+    điểm bất thường − ngưỡng quyết định của chính mô hình (> 0 <=> `is_anomaly`), đầu vào của `geo_probability` (MR22).
+    Không bao giờ raise — mọi lỗi được nuốt và log lại.
     """
     _load()
     if _iso_forest is None or _scaler is None:
@@ -97,17 +102,38 @@ def predict(features: dict) -> dict | None:
         # sklearn coi là bất thường khi score_samples - offset_ < 0.
         forest = _fast_forest or _iso_forest
         score = float(forest.score_samples(scaled)[0])
-        return {"is_anomaly": bool(score - _iso_forest.offset_ < 0), "anomaly_score": -score}
+        margin = _iso_forest.offset_ - score
+        return {"is_anomaly": bool(margin > 0), "anomaly_score": -score, "margin": float(margin)}
     except Exception:  # noqa: BLE001
         logger.exception("Lỗi khi suy luận ML tầng 3 cho 1 lần đăng nhập — bỏ qua, không chặn luồng.")
         return None
 
 
+DEFAULT_COLD_START_MIN_SUCCESSES = 5  # khi meta.json cũ (trước MR22) chưa ghi giá trị đo được — xem ml/train.py
+
+
+def geo_slope() -> float | None:
+    """Độ dốc của đường xác suất `ml_geo` (MR22, ml/train.py), None nếu chưa có mô hình hoặc meta.json chưa có hiệu chỉnh
+    (mô hình train trước MR22) — khi đó không dùng tầng 3 làm bằng chứng, không đoán bừa một độ dốc."""
+    _load()
+    if _iso_forest is None or _meta is None:
+        return None
+    calibration = _meta.get("geo_calibration")
+    return None if calibration is None else float(calibration["slope"])
+
+
+def cold_start_min_successes() -> int:
+    """Số lần đăng nhập thành công TỐI THIỂU trước đó để tầng 3 được chấm một tài khoản (cổng cold-start, MR22)."""
+    _load()
+    return int((_meta or {}).get("cold_start_min_successes", DEFAULT_COLD_START_MIN_SUCCESSES))
+
+
 def explain(features: dict, top_n: int = 3) -> str:
     """Giải thích NGƯỜI ĐỌC ĐƯỢC: đặc trưng nào lệch nhiều nhất so với phân
     phối "bình thường" đã học (mean/std của tập train, lưu ở meta.json).
-    Dùng cho message của Alert 'ml_anomaly' — thay vì chỉ đưa 1 điểm số,
-    chỉ ra CỤ THỂ điều gì khiến lần đăng nhập này bị coi là lạ.
+    Dùng cho nhãn của nguồn `ml_geo` trong cảnh báo hybrid (trước MR22: message
+    của Alert 'ml_anomaly') — thay vì chỉ đưa 1 điểm số, chỉ ra CỤ THỂ điều gì
+    khiến lần đăng nhập này bị coi là lạ.
 
     Trả chuỗi rỗng nếu model/thống kê chưa sẵn sàng (không raise).
     """

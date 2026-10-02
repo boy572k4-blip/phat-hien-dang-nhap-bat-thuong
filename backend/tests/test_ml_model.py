@@ -65,6 +65,55 @@ def test_predict_matches_sklearn_predict_and_score_samples_exactly_if_trained():
     _reset_module_cache()
 
 
+def test_predict_margin_is_the_distance_to_the_models_own_threshold_if_trained():
+    """MR22: `margin` = offset_ − score_samples, > 0 đúng khi mô hình gắn cờ — đầu vào của geo_probability."""
+    import numpy as np
+
+    _reset_module_cache()
+    if not ml_model.is_available():
+        import pytest
+
+        pytest.skip("Chưa train model ML")
+    rng = np.random.default_rng(11)
+    for _ in range(30):
+        features = {name: float(v) for name, v in zip(FEATURE_NAMES, rng.normal(scale=3.0, size=len(FEATURE_NAMES)))}
+        scaled = ml_model._scaler.transform(np.array([[features[name] for name in FEATURE_NAMES]]))
+        result = ml_model.predict(features)
+        assert result["margin"] == float(ml_model._iso_forest.offset_ - ml_model._iso_forest.score_samples(scaled)[0])
+        assert result["is_anomaly"] == (result["margin"] > 0)
+    _reset_module_cache()
+
+
+def _pretend_loaded(meta):
+    ml_model._load_attempted = True
+    ml_model._scaler = object()
+    ml_model._iso_forest = object()
+    ml_model._meta = meta
+
+
+def test_geo_slope_is_none_without_a_model_or_for_a_model_trained_before_mr22(monkeypatch):
+    _reset_module_cache()
+    monkeypatch.setattr(ml_model, "_ARTIFACTS_DIR", "duong-dan-khong-ton-tai")
+    assert ml_model.geo_slope() is None
+
+    _pretend_loaded({"feature_mean": []})  # meta.json cũ: không có "geo_calibration"
+    assert ml_model.geo_slope() is None
+
+    _pretend_loaded({"geo_calibration": {"slope": 48.5}})
+    assert ml_model.geo_slope() == 48.5
+    _reset_module_cache()
+
+
+def test_cold_start_gate_reads_meta_and_defaults_to_five(monkeypatch):
+    _reset_module_cache()
+    monkeypatch.setattr(ml_model, "_ARTIFACTS_DIR", "duong-dan-khong-ton-tai")
+    assert ml_model.cold_start_min_successes() == ml_model.DEFAULT_COLD_START_MIN_SUCCESSES == 5
+
+    _pretend_loaded({"cold_start_min_successes": 7})
+    assert ml_model.cold_start_min_successes() == 7
+    _reset_module_cache()
+
+
 def test_predict_never_raises_on_malformed_features():
     _reset_module_cache()
     if not ml_model.is_available():

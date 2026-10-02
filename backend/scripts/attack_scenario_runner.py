@@ -108,26 +108,40 @@ def _insert_baseline(session_factory, spec: ScenarioSpec) -> None:
     `longitude`/`device_fingerprint` của MỌI dòng baseline đều NULL, khiến `is_known_location`/`is_known_device`
     (`ml/features.py`, tầng 3) luôn thấy "chưa từng biết" dù đã có hàng chục dòng lịch sử TRÙNG HỆT — xác nhận trực
     tiếp: một tài khoản có 35 lần đăng nhập baseline THÀNH CÔNG rồi đăng nhập lại GIỐNG HỆT (cùng IP/UA/giờ) vẫn bị
-    `ml_anomaly` báo động trước khi sửa, KHÔNG còn báo sau khi sửa."""
+    `ml_anomaly` báo động trước khi sửa, KHÔNG còn báo sau khi sửa.
+
+    ⚠️ MR22: sửa trên CHƯA đủ — `is_known_device`/`is_known_location` (tầng 3) đọc bảng `known_devices`/`known_locations`
+    (từ Tuần 4), còn lệch giờ đọc `user_baseline`; cả ba chỉ được ghi khi một lần đăng nhập thành công đi qua pipeline.
+    Dòng nền chèn thẳng không ghi chúng, nên với tầng 3 MỌI tài khoản có lịch sử vẫn là "thiết bị mới + vị trí mới" ở
+    lần thử đầu tiên của kịch bản. Giờ mỗi dòng nền thành công được ghi sổ y như pipeline làm cho một lần đăng nhập
+    thành công thật (`update_baseline_after_successful_login` + `record_known_*_if_new`)."""
+    from app.detection.baseline import record_known_device_if_new, record_known_location_if_new, update_baseline_after_successful_login
     from app.detection.geoip import lookup_ip
     from app.models import LoginEvent, User
     from app.utils.device import compute_device_fingerprint
 
-    baseline = [a for a in spec.attempts if not a.is_attack_step]
+    baseline = sorted((a for a in spec.attempts if not a.is_attack_step), key=lambda a: a.offset_s)
     if not baseline:
         return
     db = session_factory()
     try:
-        users_by_name = {u.username: u.id for u in db.query(User).filter(User.username.in_(spec.victim_usernames)).all()}
+        users_by_name = {u.username: u for u in db.query(User).filter(User.username.in_(spec.victim_usernames)).all()}
         for a in baseline:
             geo = lookup_ip(a.ip)
-            db.add(LoginEvent(
-                user_id=users_by_name.get(a.username), attempted_username=a.username, success=a.success, ip_address=a.ip,
+            user = users_by_name.get(a.username)
+            event = LoginEvent(
+                user_id=user.id if user is not None else None, attempted_username=a.username, success=a.success, ip_address=a.ip,
                 user_agent=a.user_agent, device_fingerprint=compute_device_fingerprint(a.user_agent),
                 country=geo.country if geo else None, city=geo.city if geo else None,
                 latitude=geo.latitude if geo else None, longitude=geo.longitude if geo else None,
                 is_synthetic=True, created_at=BASE_TS + timedelta(seconds=a.offset_s),
-            ))
+            )
+            db.add(event)
+            db.flush()
+            if a.success and user is not None:
+                update_baseline_after_successful_login(db, user, event)
+                record_known_device_if_new(db, user, event.device_fingerprint, a.user_agent)
+                record_known_location_if_new(db, user, event.country, event.city)
         db.commit()
     finally:
         db.close()
@@ -260,7 +274,9 @@ def render(payload: dict) -> str:
         "baseline trông \"chưa từng thấy thiết bị/vị trí này\" dù được lặp lại hàng chục lần, làm sai lệch `is_new_device`/"
         "`is_new_location` (tầng 3) một cách có hệ thống. Đã sửa trong `_insert_baseline()` (tính GeoIP + "
         "`compute_device_fingerprint` THẬT, y hệt pipeline sống sẽ làm) — CHƯA sửa ngược lại `alert_intelligence_sim.py` "
-        "(ngoài phạm vi MR18, để lại ghi chú cho lần sau).",
+        "(ngoài phạm vi MR18, để lại ghi chú cho lần sau). MR22: sửa đó chưa đủ — dòng nền còn phải được ghi vào "
+        "`known_devices`/`known_locations`/`user_baseline` như một lần đăng nhập thành công thật (đã thêm); trước đó caveat "
+        "`ml_anomaly` ở trên một phần là do chính bộ chạy kịch bản. Từ MR22 tầng 3 không còn alert riêng (nguồn `ml_geo`).",
         "- **`rare_network_login` một mình KHÔNG đủ để tạo alert** (trả lời câu hỏi để ngỏ ở `docs/rule-catalog.md` — "
         "\"giá trị thật đo bằng kịch bản mô phỏng ở MR18\"): kịch bản `same_country_proxy` (cùng nước, cùng thiết bị, "
         "CHỈ đổi ASN) chỉ còn `ml_anomaly` (xem caveat trên) — trọng số hiệu chỉnh của `rare_network_login` (2,6%, "

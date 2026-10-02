@@ -14,6 +14,10 @@ Xuất ra:
   - Đường ROC chồng 4 phương pháp → docs/figures/ml-roc-curves.png
   - Feature importance (permutation, dựa trên ROC-AUC) của Isolation Forest
     → docs/figures/ml-feature-importance.png
+  - MR22: recall theo từng kiểu bất thường + báo nhầm của Isolation Forest ở 3 điểm làm việc — điểm đã công bố từ
+    Tuần 7 (top `contamination` điểm của tập test), ngưỡng của chính mô hình (alert `ml_anomaly` trên luồng thật trước
+    MR22) và nguồn `ml_geo` của MR22 (xác suất ≥ ngưỡng alert của hồ sơ hybrid, qua cổng cold-start)
+    → ml/artifacts/evaluation_geo_by_type.csv
 
 Chạy (sau khi đã chạy ml/train.py):
     cd backend
@@ -110,6 +114,35 @@ def _binary_from_continuous(scores: np.ndarray, contamination: float) -> np.ndar
     return (scores >= threshold).astype(int)
 
 
+HYBRID_PROFILE_PATH = os.path.join(os.path.dirname(__file__), "..", "app", "detection", "hybrid", "profiles", "rba_calibrated.json")
+
+
+def geo_operating_points(model, X_scaled: np.ndarray, test_df: pd.DataFrame, meta: dict, bands) -> pd.DataFrame:
+    """MR22 — recall theo kiểu bất thường và báo nhầm (FPR) của Isolation Forest ở 3 điểm làm việc (docstring module).
+    `bands`: ngưỡng hành động của hồ sơ hybrid đang dùng (mốc và trần của `geo_probability`)."""
+    from app.detection.hybrid import geo_probability
+
+    raw = model.score_samples(X_scaled)
+    margin = model.offset_ - raw
+    flagged = {
+        "documented": _binary_from_continuous(-raw, meta["contamination"]).astype(bool),
+        "model_threshold": margin > 0,
+    }
+    calibration = meta.get("geo_calibration")
+    if calibration is not None:
+        gate = test_df["successful_login_count_so_far"].values >= meta.get("cold_start_min_successes", 0)
+        probability = np.array([geo_probability(float(m), calibration["slope"], bands) for m in margin])
+        flagged["ml_geo_mr22"] = (probability >= bands.alert_at / 100) & gate
+    is_anomaly = test_df["is_anomaly"].values == 1
+    rows = []
+    for anomaly_type, group in test_df[is_anomaly].groupby("anomaly_type"):
+        idx = group.index.values
+        rows.append({"anomaly_type": anomaly_type, "n": len(idx), **{k: float(v[idx].mean()) for k, v in flagged.items()}})
+    rows.append({"anomaly_type": "ALL (recall)", "n": int(is_anomaly.sum()), **{k: float(v[is_anomaly].mean()) for k, v in flagged.items()}})
+    rows.append({"anomaly_type": "NORMAL (false positive rate)", "n": int((~is_anomaly).sum()), **{k: float(v[~is_anomaly].mean()) for k, v in flagged.items()}})
+    return pd.DataFrame(rows).set_index("anomaly_type")
+
+
 def main() -> None:
     os.makedirs(FIGURES_DIR, exist_ok=True)
     scaler, models, meta, test_df = _load_artifacts()
@@ -157,6 +190,19 @@ def main() -> None:
     result_path = os.path.join(ARTIFACTS_DIR, "evaluation_results.csv")
     result_df.to_csv(result_path)
     print(f"\nĐã lưu bảng kết quả: {os.path.abspath(result_path)}")
+
+    # --- MR22: tầng 3 thành nguồn `ml_geo` của hybrid — recall theo kiểu bất thường ở 3 điểm làm việc ---
+    from app.detection.hybrid import HybridProfile
+
+    bands = HybridProfile.from_file(HYBRID_PROFILE_PATH).bands
+    geo_df = geo_operating_points(models["isolation_forest"], X_test_scaled, test_df, meta, bands)
+    print(f"\nMR22 — Isolation Forest theo kiểu bất thường (tỉ lệ bị gắn cờ; ngưỡng hồ sơ hybrid {bands.alert_at}/{bands.step_up_at}/{bands.lock_at}):")
+    print(geo_df.to_string(float_format=lambda v: f"{v:.1%}"))
+    geo_path = os.path.join(ARTIFACTS_DIR, "evaluation_geo_by_type.csv")
+    geo_df.to_csv(geo_path)
+    for row in meta.get("cold_start_fpr", []):
+        print(f"  cold-start: {row['successes_before']:>6} lần thành công trước đó -> {row['flagged_share']:.1%} đăng nhập bình thường bị gắn cờ ({row['normal_logins']} dòng)")
+    print(f"Đã lưu: {os.path.abspath(geo_path)}")
 
     # --- Biểu đồ 1: ma trận nhầm lẫn 4 phương pháp ---
     fig, axes = plt.subplots(1, 4, figsize=(18, 4.5))

@@ -1,5 +1,6 @@
 """MR11 — bộ gộp hybrid risk engine: noisy-OR, gộp luật/danh tiếng/ML thành điểm 0-100 và hành động, giải thích.
-MR21 — hành động tối thiểu của luật xác định (`RuleSpec.min_action`), thay cơ chế "luật ghi đè" riêng của blocklist."""
+MR21 — hành động tối thiểu của luật xác định (`RuleSpec.min_action`), thay cơ chế "luật ghi đè" riêng của blocklist.
+MR22 — nguồn thứ hai của nhóm ML (`ml_geo`, mô hình địa lý-thời gian), gộp với `hybrid_cp2` bằng max."""
 
 import math
 
@@ -8,7 +9,7 @@ import pytest
 from app.detection.engine.registry import CATEGORIES, REGISTRY, RuleSpec
 from app.detection.engine.types import RuleHit
 from app.detection.hybrid.calibration import ActionBands, RuleWeightEntry, RuleWeights
-from app.detection.hybrid.combine import REPUTATION_CATEGORY, combine_risk, noisy_or
+from app.detection.hybrid.combine import GEO_LABEL, REPUTATION_CATEGORY, combine_risk, noisy_or
 
 BANDS = ActionBands(alert_at=20, step_up_at=50, lock_at=85)
 
@@ -73,6 +74,34 @@ def test_rules_and_ml_combine_via_noisy_or_and_action_follows_the_score():
     result = combine_risk(ml_probability=0.2, hits=[hit("brute_force")], weights=weights({"brute_force": 0.5}), bands=BANDS)
     assert result.probability == pytest.approx(1 - 0.8 * 0.5) and result.score == 60 and result.action == "step_up"
     assert result.rule_probability == pytest.approx(0.5) and result.ml_probability == 0.2
+
+
+def test_the_two_models_combine_by_max_not_noisy_or():
+    """MR22: `hybrid_cp2` và mô hình địa lý-thời gian cùng thấy "thiết bị/vị trí mới" — noisy-OR sẽ đếm một tín hiệu hai
+    lần. Nhóm ML lấy max; mô hình thua vẫn được liệt kê để giải thích nhưng không đổi điểm."""
+    result = combine_risk(ml_probability=0.3, hits=[], weights=weights({}), bands=BANDS, ml_geo_probability=0.2)
+    assert result.probability == pytest.approx(0.3) and result.ml_probability == 0.3 and result.ml_geo_probability == 0.2
+    assert [c.source for c in result.contributions] == ["ml", "ml_geo"] and {c.group for c in result.contributions} == {"ml"}
+
+    result = combine_risk(ml_probability=0.1, hits=[], weights=weights({}), bands=BANDS, ml_geo_probability=0.35)
+    assert result.probability == pytest.approx(0.35) and result.contributions[0].source == "ml_geo"
+
+
+def test_the_geo_model_still_combines_with_rules_via_noisy_or():
+    result = combine_risk(ml_probability=0.1, hits=[hit("brute_force")], weights=weights({"brute_force": 0.32}), bands=BANDS, ml_geo_probability=0.38)
+    assert result.probability == pytest.approx(1 - (1 - 0.38) * (1 - 0.32))
+
+
+def test_the_geo_model_alone_counts_when_the_rba_model_is_unavailable():
+    result = combine_risk(ml_probability=None, hits=[], weights=weights({}), bands=BANDS, ml_geo_probability=0.4)
+    assert result.probability == pytest.approx(0.4) and result.score == 40 and result.ml_probability is None
+
+
+def test_the_geo_label_defaults_and_can_carry_the_deviating_features():
+    default = combine_risk(ml_probability=None, hits=[], weights=weights({}), bands=BANDS, ml_geo_probability=0.4)
+    assert default.contributions[0].label == GEO_LABEL
+    labelled = combine_risk(ml_probability=None, hits=[], weights=weights({}), bands=BANDS, ml_geo_probability=0.4, ml_geo_label="x: vị trí mới ↑")
+    assert labelled.contributions[0].label == "x: vị trí mới ↑"
 
 
 def test_an_unknown_rule_id_falls_back_to_the_default_weight():

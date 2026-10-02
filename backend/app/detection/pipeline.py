@@ -15,10 +15,16 @@ MR21 — MỘT bộ luật duy nhất: tầng 1 (ba luật đếm Redis riêng c
 cộng điểm tay +20/+30/+40/+50 của Tuần 4, alert `high_risk_score`) đã bị XOÁ — cùng các dấu hiệu đó giờ là luật của rule
 engine v2 (MR9), luật xác định mang "hành động tối thiểu" (`RuleSpec.min_action`) nên vẫn tự cảnh báo được dù trọng số
 hiệu chỉnh trên RBA thấp. Điểm rủi ro DUY NHẤT của một lần đăng nhập là điểm hybrid (ghi cả vào `risk_score`). Ánh xạ
-từng thành phần cũ: docs/rule-unification.md. Tầng 3 (ML địa lý-thời gian, Tuần 7) vẫn tạo alert `ml_anomaly` riêng cho
-tới MR22. Đánh đổi: trước đây khối MR12 hỏng thì alert tầng 1 vẫn còn làm dự phòng; giờ chỉ còn một đường — các thành phần
-của nó (ngữ cảnh, rule engine, mô hình) đều không raise với lỗi thường gặp, khối vẫn được bọc `try/except` riêng để lỗi
-không làm mất `event` đã ghi hay làm sập luồng đăng nhập.
+từng thành phần cũ: docs/rule-unification.md. Đánh đổi: trước đây khối MR12 hỏng thì alert tầng 1 vẫn còn làm dự phòng;
+giờ chỉ còn một đường — các thành phần của nó (ngữ cảnh, rule engine, mô hình) đều không raise với lỗi thường gặp, khối vẫn
+được bọc `try/except` riêng để lỗi không làm mất `event` đã ghi hay làm sập luồng đăng nhập.
+
+MR22 — tầng 3 (ML địa lý-thời gian, Tuần 7) không còn tạo alert `ml_anomaly` riêng: biên độ của nó được đổi sang xác suất
+(`hybrid.calibration.geo_probability`) thành nguồn bằng chứng `ml_geo`, gộp với `hybrid_cp2` bằng max (hai mô hình dùng
+chung tín hiệu thiết bị/vị trí mới) rồi noisy-OR với luật và danh tiếng (`hybrid/combine.py`). Chỉ chấm
+tài khoản đã có ít nhất `ml_model.cold_start_min_successes()` lần đăng nhập thành công trước đó (cổng cold-start) — trước
+MR22 gần như mọi tài khoản mới đều bị gắn `ml_anomaly` ngay lần đầu. `LoginEvent.ml_anomaly_score` vẫn được ghi cho mọi
+lần thử vào tài khoản có thật (kể cả khi bị cổng chặn) để tra cứu.
 
 MR13 (`app/detection/alert_intelligence.py`, THUẦN không đụng DB) làm giàu alert `hybrid_risk` NGAY TRONG khối MR12 ở
 trên: novelty so với lịch sử tài khoản, họ tấn công GỢI Ý, ưu tiên hiển thị, và chống trùng lặp — cùng (tài khoản hoặc
@@ -59,6 +65,7 @@ from app.detection.adaptive_threshold import apply_delta
 from app.detection.baseline import record_known_device_if_new, record_known_location_if_new, update_baseline_after_successful_login
 from app.detection.campaign_correlation import LIVE_CAMPAIGN_WINDOW
 from app.detection.geoip import lookup_asn, lookup_ip
+from app.detection.hybrid import GEO_LABEL
 from app.detection.login_context import build_login_context
 from app.detection.response_execution import LOCK_TTL, lock_kind_and_value
 from app.detection.rule_engine_runtime import build_rule_engine, invalidate_blocklist_cache
@@ -138,9 +145,9 @@ def _run_detection_pipeline_sync(
         # (Alert, extra field cho payload WebSocket)
         alert_records: list[tuple[Alert, dict]] = []
 
-        # --- Tầng 3: ML địa lý-thời gian (Tuần 7), THAM KHẢO. Tính đặc trưng TRƯỚC khi record_known_*_if_new() bên dưới
-        # cập nhật thiết bị/vị trí quen, cho đúng ý nghĩa "chưa từng thấy" (giống lúc train offline). Alert `ml_anomaly`
-        # được tạo SAU khối hybrid để mang điểm rủi ro duy nhất của lần đăng nhập (MR21; MR22 gộp tầng 3 vào hybrid).
+        # --- Tầng 3: ML địa lý-thời gian (Tuần 7). Tính đặc trưng TRƯỚC khi record_known_*_if_new() bên dưới cập nhật
+        # thiết bị/vị trí quen, cho đúng ý nghĩa "chưa từng thấy" (giống lúc train offline). Từ MR22 kết quả chỉ là một
+        # nguồn bằng chứng (`ml_geo`) của khối hybrid bên dưới, không tạo alert riêng.
         ml_features = ml_result = None
         if user is not None:
             baseline = db.query(UserBaseline).filter(UserBaseline.user_id == user.id).first()
@@ -186,7 +193,19 @@ def _run_detection_pipeline_sync(
                 hybrid_engine = hybrid_runtime.get_engine()
                 with perf.timer("ml_inference"):
                     ml_assessment = hybrid_engine.ml_assessment(features)  # MỘT lần chạy mô hình cho cả điểm lẫn thành phần dẫn đầu (MR20)
-                risk_result = hybrid_engine.evaluate(features, evaluation.hits, bands=user_bands, ml=ml_assessment)
+                # MR22: mô hình địa lý-thời gian (tầng 3) là nguồn bằng chứng thứ hai `ml_geo` — CHỈ chấm tài khoản đã có đủ
+                # lần đăng nhập thành công trước đó (cổng cold-start: lần đầu của MỌI tài khoản đều "vị trí mới + thiết bị
+                # mới" theo định nghĩa, mô hình gắn cờ 100% — đo ở ml/train.py). Số lần đếm từ chính lịch sử của ngữ cảnh.
+                prior_successes = context.account.n_success if context.account is not None else 0
+                ml_geo = ml_geo_label = None
+                if ml_result is not None and prior_successes >= ml_model.cold_start_min_successes():
+                    ml_geo = hybrid_engine.ml_geo_probability(ml_result.get("margin"), ml_model.geo_slope())
+                    if ml_geo is not None:  # giữ phần diễn giải mà alert `ml_anomaly` cũ từng có: đặc trưng nào lệch nhiều nhất
+                        detail = ml_model.explain(ml_features)
+                        ml_geo_label = f"{GEO_LABEL}: {detail}" if detail else None
+                risk_result = hybrid_engine.evaluate(
+                    features, evaluation.hits, bands=user_bands, ml=ml_assessment, ml_geo=ml_geo, ml_geo_label=ml_geo_label
+                )
                 event.hybrid_risk_score = risk_result.score
                 event.hybrid_action = risk_result.action
                 # MR21: điểm rủi ro DUY NHẤT của lần đăng nhập — cột `risk_score` (trước là điểm cộng tay của tầng 2, đã
@@ -206,7 +225,7 @@ def _run_detection_pipeline_sync(
                     novelty_facts = alert_intelligence.compute_novelty(context.record, context.summary)
                     importance = user.importance if user is not None else 1.0
                     priority = alert_intelligence.priority_score(novelty_facts, confidence, importance)
-                    top_rule = next((c.source for c in risk_result.contributions if c.source != "ml"), None)
+                    top_rule = next((c.source for c in risk_result.contributions if c.group != "ml"), None)  # bỏ qua cả hai mô hình (ml, ml_geo)
 
                     # --- MR13: chống trùng lặp — cùng (tài khoản, hoặc IP nếu tài khoản không tồn tại) + họ tấn công,
                     # trong DEDUP_WINDOW gần nhất và còn "open" thì GỘP vào alert đó thay vì tạo hàng mới.
@@ -302,7 +321,9 @@ def _run_detection_pipeline_sync(
                                 except IntegrityError:
                                     block_entry = db.query(BlocklistEntry).filter(BlocklistEntry.kind == kind, BlocklistEntry.value == value).one()
                                 invalidate_blocklist_cache()  # để lần thử NGAY SAU (có thể trong vài mili-giây) đã thấy mục khoá mới, không đợi hết TTL cache 15s
-                            elif block_entry.expires_at is not None and block_entry.expires_at < new_expiry:
+                            # ensure_utc: SQLite (test/mô phỏng) đọc lại `expires_at` không kèm múi giờ — so với mốc có múi giờ
+                            # thì TypeError và cả khối hybrid bị bỏ (lộ ra ở MR22 khi kịch bản mô phỏng lần đầu đi tới đây).
+                            elif block_entry.expires_at is not None and ensure_utc(block_entry.expires_at) < ensure_utc(new_expiry):
                                 block_entry.expires_at = new_expiry
                                 invalidate_blocklist_cache()
                             response_action.status = "executed"
@@ -316,22 +337,7 @@ def _run_detection_pipeline_sync(
         except Exception:  # noqa: BLE001 — không bao giờ được làm hỏng `event` đã ghi hay làm sập luồng đăng nhập
             logger.exception("lỗi ở khối luật/hybrid cho user_id=%s ip=%s — bỏ qua, lần đăng nhập vẫn được ghi", user_id, ip)
 
-        # --- Tầng 3: alert `ml_anomaly` (đã tính ở trên), mang điểm rủi ro DUY NHẤT của lần đăng nhập. Khối luật/hybrid
-        # lỗi thì chưa có điểm đó — ghi 0 thay vì bỏ alert (cột risk_score của alerts không được NULL).
-        if ml_result is not None and ml_result["is_anomaly"]:
-            ml_explanation = ml_model.explain(ml_features)
-            alert_obj = Alert(
-                login_event_id=event.id,
-                user_id=user.id,
-                alert_type="ml_anomaly",
-                severity="medium",
-                risk_score=event.hybrid_risk_score if event.hybrid_risk_score is not None else 0,
-                message=f"ML bất thường (điểm {ml_result['anomaly_score']:.2f}, tham khảo): {ml_explanation}.",
-            )
-            db.add(alert_obj)
-            alert_records.append((alert_obj, {}))
-
-        # --- MR14: tương quan chiến dịch — gom alert của BẤT KỲ nguồn nào (hybrid_risk hoặc ml_anomaly) CÙNG hạ tầng (IP hoặc
+        # --- MR14: tương quan chiến dịch — gom alert `hybrid_risk` (nguồn cảnh báo duy nhất từ MR22) CÙNG hạ tầng (IP hoặc
         # ASN) NHẮM VÀO NHIỀU TÀI KHOẢN KHÁC NHAU trong LIVE_CAMPAIGN_WINDOW thành một Campaign. Khác chống trùng lặp
         # của MR13 (chỉ gộp CÙNG một tài khoản/IP lặp lại) — ở đây là NHIỀU tài khoản chia sẻ hạ tầng. Cô lập riêng:
         # lỗi ở đây không được làm mất các alert đã tạo/commit ở trên (app/detection/campaign_correlation.py).

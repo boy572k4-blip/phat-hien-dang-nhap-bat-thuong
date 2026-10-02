@@ -104,6 +104,8 @@ def compute_novelty(event: EventRecord, summary: HistorySummary) -> list[Novelty
 # 3 thành phần của HybridMinTail (ml/rba/ensemble.py, mô hình hybrid_cp2 đang active) -> nhãn tiếng Việt. TÁI DÙNG
 # COMPONENT_LABELS của ml/rba/explain.py (MR8) thay vì định nghĩa lại — một cái tên không nên có hai bản dịch khác nhau.
 ML_COMPONENT_FAMILY: dict[str, str] = dict(COMPONENT_LABELS)
+# MR22: khi bằng chứng dẫn đầu là mô hình địa lý-thời gian (tầng 3) chứ không phải hybrid_cp2.
+GEO_FAMILY = "đăng nhập bất thường về vị trí/thời gian (mô hình địa lý-thời gian)"
 
 
 def suggest_attack_family(
@@ -135,7 +137,9 @@ def suggest_attack_family(
         top = non_ml[0]  # contributions đã sắp giảm dần theo weight; lọc bỏ "ml" vẫn giữ đúng thứ tự giữa phần còn lại
         spec = registry.get(top.source)
         return (spec.category if spec is not None else None), top.weight
-    top = risk_result.contributions[0]  # chỉ còn "ml" — không có lựa chọn nào khác
+    top = risk_result.contributions[0]  # chỉ còn hai mô hình — mô hình dẫn đầu quyết định
+    if top.source == "ml_geo":
+        return GEO_FAMILY, top.weight
     family = ML_COMPONENT_FAMILY.get(ml_component or "") or "đăng nhập bất thường (mô hình học máy)"
     return family, top.weight
 

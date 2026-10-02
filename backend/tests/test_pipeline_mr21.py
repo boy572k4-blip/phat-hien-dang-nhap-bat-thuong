@@ -136,10 +136,5 @@ def test_every_login_carries_one_score_in_both_score_columns(db_session):
     assert len(events) == 2 and all(e.risk_score is not None and e.risk_score == e.hybrid_risk_score for e in events)
 
 
-def test_a_tier3_anomaly_alert_carries_the_score_of_the_same_login(db_session, monkeypatch):
-    monkeypatch.setattr("app.detection.pipeline.ml_model.predict", lambda features: {"is_anomaly": True, "anomaly_score": 0.7})
-    monkeypatch.setattr("app.detection.pipeline.ml_model.explain", lambda features: "giả lập")
-    user = _user(db_session)
-    _login("alice", user.id, success=False)
-    (alert,) = db_session.query(Alert).filter(Alert.alert_type == "ml_anomaly").all()
-    assert alert.risk_score == db_session.query(LoginEvent).one().hybrid_risk_score
+# Test "alert ml_anomaly mang điểm của chính lần đăng nhập" đã bỏ ở MR22: tầng 3 không còn alert riêng, giờ là nguồn
+# `ml_geo` trong chính cảnh báo hybrid — xem test_pipeline_mr22.py.

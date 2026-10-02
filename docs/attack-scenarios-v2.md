@@ -1,6 +1,8 @@
 # Thư viện tấn công mô phỏng v2 — scorecard (MR18)
 
 > **Ảnh chụp kết quả TRƯỚC MR21** (còn tầng 1 và tầng 2). Sau MR21 hai tầng đó đã gộp vào rule engine v2 — so sánh trước/sau trên đúng các kịch bản này: [`rule-unification.md`](rule-unification.md) mục 3. Chạy lại script để có kết quả hiện tại.
+>
+> **MR22:** tầng 3 không còn alert `ml_anomaly` (thành nguồn `ml_geo` của hybrid). Bộ chạy kịch bản từng dựng lịch sử nền thiếu bảng thiết bị/vị trí quen, nên caveat "`ml_anomaly` gần như luôn kêu" bên dưới một phần do chính bộ chạy — đã sửa; đo lại trước/sau: [`geo-model-integration.md`](geo-model-integration.md) mục 5–6.
 
 9 kịch bản mới, mỗi kịch bản hiệu chỉnh có chủ đích để vượt hẳn ngưỡng THẬT của một luật cụ thể (`docs/rule-catalog.md`), chạy qua CHÍNH pipeline thật (rule engine v2 + hybrid risk engine, model `hybrid_cp2` thật) — mã nguồn: [`ml/attack_scenarios.py`](../backend/ml/attack_scenarios.py) (đặc tả) + [`scripts/attack_scenario_runner.py`](../backend/scripts/attack_scenario_runner.py) (chạy + đo). Mỗi kịch bản chạy **đúng 1 lần** (không phải nhiều 'trial' — xem docstring runner: các kịch bản xác định, không có nguồn ngẫu nhiên nào để lấy trung bình một cách có ý nghĩa).
 

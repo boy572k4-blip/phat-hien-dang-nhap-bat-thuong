@@ -18,6 +18,13 @@ của hành động bị ép để điểm và hành động không mâu thuẫn
 Chế độ của luật: `enforce` và `shadow` đều là bằng chứng có trọng số; chỉ `enforce` được ép hành động tối thiểu. Trước MR21
 docstring này ghi "shadow chỉ quyết định RuleEngine có tự tạo cảnh báo hay không" — sai trên luồng thật, nơi RuleEngine
 không tạo cảnh báo nào (đo ở docs/untested-behaviors-measured.md).
+
+Hai mô hình (MR22): `hybrid_cp2` và mô hình địa lý-thời gian (`ml_geo`) cùng nhìn thấy "thiết bị mới", "vị trí/quốc gia
+mới" — không độc lập, noisy-OR giữa chúng sẽ đếm cùng một tín hiệu hai lần. Nên NHÓM ML lấy xác suất LỚN HƠN của hai mô
+hình (coi như phụ thuộc hoàn toàn — cận dưới của "ít nhất một đúng"), rồi mới noisy-OR với luật và danh tiếng. Đo qua
+pipeline thật: cộng noisy-OR thì bằng chứng dưới ngưỡng của tầng 3 chồng lên nền ~0,2–0,3 mà `hybrid_cp2` cho mọi IP Việt
+Nam (lệch phân phối đã biết, MR26) và biến đăng nhập bình thường thành cảnh báo. Mô hình thua vẫn được liệt kê trong
+`contributions` (cùng chiều, để giải thích) nhưng không đổi điểm.
 """
 
 from __future__ import annotations
@@ -31,6 +38,7 @@ from app.detection.hybrid.calibration import ACTION_RANK, ActionBands, RuleWeigh
 
 REPUTATION_CATEGORY = "Danh tiếng hạ tầng"
 assert REPUTATION_CATEGORY in CATEGORIES  # lỗi sớm nếu ai đổi tên nhóm trong registry.py mà quên sửa ở đây (test cũng kiểm tra lại)
+GEO_LABEL = "mô hình địa lý-thời gian"  # nhãn mặc định của nguồn `ml_geo` (MR22)
 
 
 def noisy_or(probabilities: Iterable[float | None]) -> float:
@@ -52,8 +60,9 @@ def noisy_or(probabilities: Iterable[float | None]) -> float:
 
 @dataclass(frozen=True)
 class Contribution:
-    """Một bằng chứng đã góp vào điểm. `source`: `"ml"` hoặc mã luật. `weight`: xác suất coi bằng chứng này đúng nếu chỉ
-    một mình nó xuất hiện (p_i ở trên). `group`: `"ml"` | `"rule"` | `"reputation"`."""
+    """Một bằng chứng đã góp vào điểm. `source`: `"ml"` (mô hình hybrid_cp2), `"ml_geo"` (mô hình địa lý-thời gian, MR22)
+    hoặc mã luật. `weight`: xác suất coi bằng chứng này đúng nếu chỉ một mình nó xuất hiện (p_i ở trên). `group`: `"ml"`
+    (cả hai mô hình — trong nhóm này chỉ mô hình có `weight` lớn hơn được tính vào điểm) | `"rule"` | `"reputation"`."""
 
     source: str
     label: str
@@ -75,6 +84,7 @@ class RiskResult:
     reputation_probability: float
     overridden_by: str | None  # mã luật đã ÉP hành động lên mức tối thiểu của nó (MR21); None nếu hành động đến từ điểm
     contributions: tuple[Contribution, ...]
+    ml_geo_probability: float | None = None  # MR22: nguồn địa lý-thời gian (tầng 3), None nếu không chấm (cold-start, chưa có mô hình)
 
     @property
     def is_overridden(self) -> bool:
@@ -88,11 +98,17 @@ def combine_risk(
     weights: RuleWeights,
     bands: ActionBands,
     registry: Mapping[str, RuleSpec] | None = None,
+    ml_geo_probability: float | None = None,
+    ml_geo_label: str | None = None,
 ) -> RiskResult:
     """Chấm MỘT lần thử.
 
     `ml_probability`: xác suất tấn công ĐÃ HIỆU CHỈNH (0–1, ví dụ qua `MonotonicCalibrator.probability`), hoặc `None` nếu
     mô hình không khả dụng — bỏ qua thành phần này, không chặn luồng (cùng triết lý `app/detection/ml_model.py`).
+    `ml_geo_probability` (MR22): nguồn thứ hai — mô hình địa lý-thời gian (tầng 3) qua `calibration.geo_probability`;
+    `None` khi không chấm (tài khoản chưa qua cổng cold-start, chưa có mô hình). Gộp với `ml_probability` bằng max, không
+    phải noisy-OR (xem docstring module). `ml_geo_label`: nhãn hiển thị của nguồn đó (mặc định `GEO_LABEL`; pipeline thêm
+    các đặc trưng lệch nhiều nhất).
     `hits`: các luật đã khớp của MỘT lần thử (`Evaluation.hits` — gồm cả luật `shadow`: vẫn là bằng chứng có trọng số,
     chỉ không được ép hành động tối thiểu, xem docstring module)."""
     registry = REGISTRY if registry is None else registry
@@ -119,8 +135,12 @@ def combine_risk(
     reputation_probability = noisy_or(reputation_probs)
     if ml_probability is not None:
         contributions.append(Contribution("ml", "mô hình học máy", float(ml_probability), "ml"))
+    if ml_geo_probability is not None:
+        contributions.append(Contribution("ml_geo", ml_geo_label or GEO_LABEL, float(ml_geo_probability), "ml"))
 
-    probability = noisy_or([ml_probability, rule_probability if rule_probs else None, reputation_probability if reputation_probs else None])
+    models = [float(p) for p in (ml_probability, ml_geo_probability) if p is not None]
+    ml_group = max(models) if models else None  # hai mô hình phụ thuộc nhau: lấy max, không noisy-OR (docstring module)
+    probability = noisy_or([ml_group, rule_probability if rule_probs else None, reputation_probability if reputation_probs else None])
     score = min(100, max(0, round(probability * 100)))
     action = bands.classify(score)
     overridden_by = None
@@ -131,4 +151,5 @@ def combine_risk(
     return RiskResult(
         score=score, action=action, probability=probability, ml_probability=ml_probability, rule_probability=rule_probability,
         reputation_probability=reputation_probability, overridden_by=overridden_by, contributions=tuple(contributions),
+        ml_geo_probability=ml_geo_probability,
     )

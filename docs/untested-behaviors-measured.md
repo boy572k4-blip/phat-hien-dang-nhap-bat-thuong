@@ -1,6 +1,8 @@
 # Đo 7 hành vi còn "chưa đo" (bổ sung sau MR19)
 
 > **Ảnh chụp kết quả TRƯỚC MR21** (còn tầng 1 và tầng 2). Sau MR21 hai tầng đó đã gộp vào rule engine v2 — so sánh trước/sau trên đúng các kịch bản này: [`rule-unification.md`](rule-unification.md) mục 3. Chạy lại script để có kết quả hiện tại.
+>
+> **MR22:** tầng 3 không còn alert `ml_anomaly` (thành nguồn `ml_geo` của hybrid); bộ chạy kịch bản dùng chung đã sửa cách dựng lịch sử nền — đo lại: [`geo-model-integration.md`](geo-model-integration.md) mục 5–6.
 
 Người dùng yêu cầu kiểm chứng trực tiếp (không chỉ đọc mã) cho 7 hành vi còn đánh dấu "chưa đo" ở [`behavior-coverage-matrix.md`](behavior-coverage-matrix.md). Dùng lại NGUYÊN hạ tầng kịch bản thật của MR18 (`ml/attack_scenarios.py` + `scripts/attack_scenario_runner.py`) — không phải MR mới, không đổi checklist.
 

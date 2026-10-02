@@ -118,6 +118,25 @@ Ba hành vi nhóm "phụ thuộc hoàn cảnh" (botnet phân tán, xoay User-Age
 khi hybrid quyết định "cho qua"; giờ hybrid ra `alert` thật nhờ luật đi kèm (`impossible_travel`, `brute_force`) — vẫn là
 "nhờ tín hiệu khác", nên vẫn thuộc nhóm đó.
 
+## Cập nhật sau MR22: tầng 3 thành nguồn `ml_geo` của hybrid
+
+Tầng 3 không còn alert `ml_anomaly` riêng; nó là nguồn bằng chứng `ml_geo` của hybrid, chỉ chấm tài khoản đã có ≥ 5 lần đăng
+nhập thành công ([`geo-model-integration.md`](geo-model-integration.md)). Trên tập test, quyết định cảnh báo của tầng 3
+**trùng hoàn toàn** với trước (recall 70,6%, báo nhầm 1,6%; `dormant_reactivation` 100%, `impossible_travel_geo` 66,7%).
+MR22 cũng sửa bộ chạy kịch bản: lịch sử nền chưa từng được ghi vào bảng thiết bị/vị trí quen, nên trước đây tầng 3 thấy mọi
+tài khoản trong kịch bản là "lạ" — caveat "`ml_anomaly` gần như luôn kêu" ở các mục trên một phần do lỗi đó.
+
+| Thay đổi | Trước MR22 | Sau MR22 |
+|---|---|---|
+| Tài khoản ngủ đông, giờ lạ, vị trí lạ, thiết bị lạ (yếu) — vẫn **vững** | alert `ml_anomaly` riêng | nguồn `ml_geo` → cảnh báo hybrid; **chỉ** với tài khoản đã có ≥ 5 lần thành công. Kịch bản "ngủ đông" của MR18 (1 lần thành công trước đó) vẫn cảnh báo, nhưng nhờ luật `dormant_account_login` + `datacenter_ip` + `hybrid_cp2` |
+| Rải mật khẩu chậm — vẫn **phụ thuộc hoàn cảnh** | chỉ `ml_anomaly`, hybrid "cho qua" | hybrid `alert` ở mọi tài khoản bị thử, nhờ `ml_geo` (IP kẻ tấn công ở thành phố khác), không phải nhờ luật rải mật khẩu |
+| Proxy IP hiếm cùng nước: **không cảnh báo → phụ thuộc hoàn cảnh** | chỉ `ml_anomaly` (không tính vì caveat trên) | hybrid `alert` nhờ `ml_geo` — proxy trong kịch bản ở thành phố khác (Huế so với Hà Nội); proxy cùng thành phố sẽ không bị bắt |
+| Nhồi thông tin quy mô lớn — vẫn **vững** | `alert` | `step_up` (tầng 3 cộng với các luật) |
+| Tài khoản mới hợp lệ | `ml_anomaly` ngay lần đầu | không cảnh báo |
+
+Tổng hợp 25 hành vi: **vững 10** (không đổi), **phụ thuộc hoàn cảnh 7** (+1: proxy cùng nước), **không cảnh báo 7** (dò danh
+sách tài khoản, bot UA, Tor, datacenter, VPN, thử từ nhiều quốc gia, đăng nhập dồn dập), **mơ hồ có chủ đích 1**.
+
 ## Nguồn dữ liệu
 
 Mọi con số trong bảng lấy TRỰC TIẾP từ tài liệu đã dẫn — không tính lại riêng cho bảng này. `[Đo được thật]` nghĩa là

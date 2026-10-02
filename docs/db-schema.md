@@ -38,8 +38,8 @@ Bảng quan trọng nhất — mọi lần thử đăng nhập, thành công l�
 | country | VARCHAR(2) | ISO country code, nullable — NULL khi GeoIP lookup thất bại |
 | city | VARCHAR(128) | nullable |
 | latitude / longitude | FLOAT | nullable |
-| risk_score | INTEGER | nullable — điền bởi detection engine Tuần 4 |
-| ml_anomaly_score | FLOAT | nullable — điền bởi ML tầng 3 Tuần 7, CHẠY SONG SONG risk_score, không thay thế |
+| risk_score | INTEGER | nullable — Tuần 4–MR20: điểm cộng tay của tầng 2; từ MR21: bằng `hybrid_risk_score` (điểm rủi ro duy nhất) |
+| ml_anomaly_score | FLOAT | nullable — điểm bất thường của ML tầng 3 (Tuần 7); từ MR22 tầng 3 là nguồn `ml_geo` của hybrid, cột vẫn ghi cho mọi lần thử vào tài khoản có thật (kể cả tài khoản chưa qua cổng cold-start) để tra cứu |
 | asn | INTEGER | nullable, indexed — tra bằng GeoLite2-ASN (MR12), NULL khi IP riêng/không có trong CSDL |
 | os_name / browser_name | VARCHAR(64) | nullable — parse User-Agent (MR12, `app/utils/device.py`), cùng bộ giá trị RBA |
 | device_type | VARCHAR(16) | nullable — `mobile`\|`desktop`\|`tablet`\|`bot`\|`unknown` (MR12) |
@@ -90,7 +90,7 @@ Hồ sơ hành vi "bình thường" theo user (Tuần 4). Quan hệ 1-1 với `u
 | id | INTEGER PK | |
 | login_event_id | INTEGER FK → login_events.id | indexed |
 | user_id | INTEGER FK → users.id | nullable (username không tồn tại thì không có user) |
-| alert_type | VARCHAR(32) | `brute_force` \| `credential_stuffing` \| `impossible_travel` \| `high_risk_score` \| `ml_anomaly` \| `hybrid_risk` (MR12) |
+| alert_type | VARCHAR(32) | `brute_force` \| `credential_stuffing` \| `impossible_travel` \| `high_risk_score` \| `ml_anomaly` \| `hybrid_risk` (MR12) — từ MR22 chỉ còn tạo `hybrid_risk`; các loại khác chỉ có trong dữ liệu cũ (tầng 1–2 xoá ở MR21, `ml_anomaly` ở MR22) |
 | severity | VARCHAR(16) | `low` \| `medium` \| `high` — ánh xạ từ risk_score theo mục 4.2 |
 | risk_score | INTEGER | |
 | message | TEXT | mô tả người đọc được, hiển thị trực tiếp trên dashboard |

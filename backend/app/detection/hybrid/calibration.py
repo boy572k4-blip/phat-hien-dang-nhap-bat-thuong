@@ -7,6 +7,7 @@ Mọi kiểu ở đây chỉ là DỮ LIỆU (đọc/ghi JSON, kiểm tra hợp 
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
@@ -164,6 +165,36 @@ class ActionBands:
             return cls(int(data["alert_at"]), int(data["step_up_at"]), int(data["lock_at"]))
         except (KeyError, TypeError) as exc:
             raise HybridConfigError(f"ngưỡng hành động sai định dạng: {exc}") from exc
+
+
+def geo_probability(margin: float, slope: float, bands: ActionBands) -> float:
+    """MR22 — biên độ của mô hình địa lý-thời gian (tầng 3: điểm bất thường của Isolation Forest − ngưỡng quyết định của
+    chính mô hình, > 0 là bị gắn cờ) -> xác suất trên thang của hybrid (nguồn `ml_geo`, xem `combine_risk`).
+
+    Đường logistic: ĐỘ DỐC `slope` học bằng hồi quy logistic trên điểm ngoài mẫu có nhãn (ml/train.py); MỐC neo ở ngưỡng
+    `alert` của `bands` — biên độ 0 cho đúng `alert_at/100`, nên MỘT MÌNH nguồn này cảnh báo đúng khi mô hình gắn cờ (như
+    alert `ml_anomaly` riêng trước MR22, sai khác chỉ ở làm tròn điểm). Không dùng thẳng xác suất hiệu chỉnh trên dữ liệu
+    tự sinh: tỉ lệ bất thường ở đó cao hơn thực tế nhiều nên xác suất bị thổi phồng (đo ở docs/geo-model-integration.md mục 3).
+    Bị chặn trên bởi `geo_cap(bands)`."""
+    anchor = min(max(bands.alert_at / 100, 1e-6), 1 - 1e-6)
+    z = slope * margin + math.log(anchor / (1 - anchor))
+    probability = 1.0 / (1.0 + math.exp(-z)) if z > -700 else 0.0  # exp tràn số với z rất âm: xác suất coi như 0
+    return min(probability, geo_cap(bands))
+
+
+def geo_cap(bands: ActionBands) -> float:
+    """Trần của nguồn `ml_geo`: 1 − (1 − step_up)/(1 − alert), không thấp hơn ngưỡng alert. Đó là mức mà gộp noisy-OR với
+    MỘT bằng chứng khác tự nó đủ cảnh báo thì vừa chạm ngưỡng step_up — nghĩa là: một mình tầng 3 chỉ CẢNH BÁO; tầng 3
+    cộng một tín hiệu độc lập đáng cảnh báo mới thành yêu cầu xác thực thêm; muốn khoá phải có bằng chứng mạnh hơn nữa.
+    Với ngưỡng 32/58 của hồ sơ RBA: 0,382.
+
+    Lý do không để trần sát `step_up_at` (bản đầu của MR22, đo qua pipeline thật): mô hình gắn cờ thì đa số ca nằm ngay ở
+    trần, nên chỉ thêm 2–3% bằng chứng bất kỳ là thành step_up, và cộng nền ~0,2–0,3 của `hybrid_cp2` với IP Việt Nam (lệch
+    phân phối đã biết, MR26) là thành KHOÁ — mô hình học trên dữ liệu tự sinh không được tự đẩy tới mức đó."""
+    alert, step_up = bands.alert_at / 100, bands.step_up_at / 100
+    if alert >= 1:
+        return 1.0
+    return max(alert, 1 - (1 - step_up) / (1 - alert))
 
 
 @dataclass(frozen=True)

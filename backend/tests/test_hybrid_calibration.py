@@ -4,7 +4,17 @@ import json
 
 import pytest
 
-from app.detection.hybrid.calibration import ActionBands, HybridConfigError, HybridProfile, MonotonicCalibrator, RuleWeightEntry, RuleWeights
+from app.detection.hybrid.calibration import (
+    ActionBands,
+    HybridConfigError,
+    HybridProfile,
+    MonotonicCalibrator,
+    RuleWeightEntry,
+    RuleWeights,
+    geo_cap,
+    geo_probability,
+)
+from app.detection.hybrid.combine import noisy_or
 
 
 # ------------------------------------------------------------------------------------------------ MonotonicCalibrator
@@ -112,6 +122,46 @@ def test_rejects_bands_that_are_not_a_strictly_increasing_triple_within_0_100(al
 def test_bands_round_trip_through_json():
     bands = ActionBands(12, 45, 88)
     assert ActionBands.from_dict(json.loads(json.dumps(bands.to_dict()))) == bands
+
+
+# ------------------------------------------------------------------------------------------------ MR22: nguồn ml_geo
+
+RBA_BANDS = ActionBands(32, 58, 70)  # ngưỡng của hồ sơ rba_calibrated.json
+
+
+def test_geo_probability_is_anchored_at_the_alert_threshold():
+    """Biên độ 0 (đúng ngưỡng của mô hình) -> đúng alert_at/100: một mình tầng 3 cảnh báo đúng khi mô hình gắn cờ."""
+    for bands in (RBA_BANDS, ActionBands(40, 65, 85)):
+        assert geo_probability(0.0, 48.0, bands) == pytest.approx(bands.alert_at / 100)
+        assert bands.classify(round(geo_probability(1e-4, 48.0, bands) * 100)) == "alert"
+        assert bands.classify(round(geo_probability(-0.05, 48.0, bands) * 100)) == "allow"
+
+
+def test_geo_probability_is_monotonic_and_bounded_by_the_cap():
+    margins = [-1.0, -0.1, -0.02, 0.0, 0.002, 0.01, 0.1, 5.0]
+    values = [geo_probability(m, 48.0, RBA_BANDS) for m in margins]
+    assert values == sorted(values) and values[0] >= 0.0
+    assert max(values) == pytest.approx(geo_cap(RBA_BANDS))
+
+
+def test_geo_probability_survives_extreme_margins():
+    assert geo_probability(-1e9, 48.0, RBA_BANDS) == 0.0  # không tràn số
+    assert geo_probability(1e9, 48.0, RBA_BANDS) == pytest.approx(geo_cap(RBA_BANDS))
+
+
+def test_the_geo_cap_means_the_geo_model_plus_one_more_alert_worthy_signal_reaches_step_up():
+    """Định nghĩa của trần: noisy-OR(trần, alert_at) = step_up_at — một mình chỉ cảnh báo, thêm một tín hiệu độc lập đủ
+    cảnh báo thì mới yêu cầu xác thực thêm."""
+    cap = geo_cap(RBA_BANDS)
+    assert cap == pytest.approx(1 - 0.42 / 0.68)  # 0,382 với ngưỡng 32/58
+    assert RBA_BANDS.alert_at / 100 < cap < RBA_BANDS.step_up_at / 100
+    assert noisy_or([cap, RBA_BANDS.alert_at / 100]) == pytest.approx(RBA_BANDS.step_up_at / 100)
+
+
+def test_the_geo_cap_never_falls_below_the_alert_threshold():
+    narrow = ActionBands(45, 50, 90)  # công thức cho 0,09 < 0,45: khi đó giữ ngưỡng alert để tầng 3 một mình vẫn cảnh báo được
+    assert geo_cap(narrow) == pytest.approx(0.45)
+    assert geo_probability(1.0, 48.0, narrow) == pytest.approx(0.45)
 
 
 # ------------------------------------------------------------------------------------------------ HybridProfile

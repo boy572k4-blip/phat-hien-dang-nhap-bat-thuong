@@ -69,6 +69,10 @@ Chạy lại 9 kịch bản MR18 ([`attack-scenarios-v2.md`](attack-scenarios-v2
 thật** (DB cô lập, mô hình `hybrid_cp2` thật), trước và sau MR21. "Bước" là lần thử đầu tiên có cảnh báo KHÔNG tính
 `ml_anomaly` (tầng 3 gần như luôn kêu với tài khoản mới — xem caveat ở attack-scenarios-v2.md), kèm hành động hybrid cao nhất.
 
+> MR22 phát hiện bộ chạy kịch bản dựng lịch sử nền thiếu bảng thiết bị/vị trí quen, nên số `ml_anomaly` của bảng này không
+> đáng tin. Phần không tính `ml_anomaly` (luật, hybrid: số cảnh báo, bước, hành động) đo lại bằng bộ chạy đã sửa thì **giống
+> hệt** ở cả 17 kịch bản. Bảng đo lại MR21 và MR22 với bộ chạy đã sửa: [`geo-model-integration.md`](geo-model-integration.md) mục 5.
+
 | Kịch bản | Trước: cảnh báo | Trước: bước · hành động | Sau: cảnh báo | Sau: bước · hành động |
 |---|---|---|---|---|
 | Rải mật khẩu chậm | ml_anomaly ×18 | chỉ `ml_anomaly` · allow | ml_anomaly ×18 | chỉ `ml_anomaly` · allow |
@@ -106,7 +110,8 @@ thật** (DB cô lập, mô hình `hybrid_cp2` thật), trước và sau MR21. "
   của khối (ngữ cảnh đăng nhập, rule engine, mô hình) đều không raise với lỗi thường gặp, khối vẫn được bọc riêng để lỗi không
   làm mất lần đăng nhập đã ghi (`tests/test_pipeline_mr12.py`).
 - **Tổ hợp "lệch giờ + vị trí lạ" (20 + 30 = 50, cảnh báo của tầng 2) không còn cảnh báo riêng.** Hai dấu hiệu này vẫn được
-  tầng 3 (ML) chấm và cảnh báo `ml_anomaly` như trước; MR22 đưa tầng 3 vào hybrid làm nguồn bằng chứng.
+  tầng 3 (ML) chấm và cảnh báo `ml_anomaly` như trước; MR22 đưa tầng 3 vào hybrid làm nguồn bằng chứng `ml_geo`
+  ([`geo-model-integration.md`](geo-model-integration.md)).
 - **Điểm hiển thị của `blocklist_hit`** đổi từ 100 (ghi đè cũ) thành ngưỡng `lock_at` của hồ sơ đang dùng; hành động vẫn là `lock`.
 - **Một điểm rủi ro cho mỗi lần đăng nhập:** cột `login_events.risk_score` (trước là điểm cộng tay của tầng 2) giờ chứa đúng
   điểm hybrid, cảnh báo `ml_anomaly` cũng mang điểm đó — bảng log và biểu đồ hiện có tiếp tục hoạt động. Mức low/medium/high
