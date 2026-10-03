@@ -74,7 +74,11 @@ def brute_force(ctx: RuleContext) -> Finding | None:
     ),
     needs=(),
     min_action="alert",
-    notes="Phạm vi ASN chỉ chạy khi biết ASN (GeoLite2-ASN). Ngưỡng IP (10 lần, 5 tên, 5 phút) là luật gốc. Hành động tối thiểu `alert` (MR21, chốt ở MR25: 0 lần thử hợp lệ bị ép trên bộ MR24, kể cả 5–15 đồng nghiệp sau một NAT văn phòng — điều kiện tỉ lệ thành công loại họ ra).",
+    notes=(
+        "Phạm vi ASN chỉ chạy khi biết ASN (GeoLite2-ASN). Ngưỡng IP (10 lần, 5 tên, 5 phút) là luật gốc. Hành động tối thiểu `alert` (MR21, chốt ở MR25: 0 lần "
+        "thử hợp lệ bị ép trên bộ MR24, kể cả 5–15 đồng nghiệp sau một NAT văn phòng — điều kiện tỉ lệ thành công loại họ ra) — CHỈ ở phạm vi IP (MR27): trên RBA, "
+        "phạm vi ASN khớp 684 lần trên 10.000 đăng nhập hợp lệ (phạm vi IP: 0,7) vì một nhà mạng gom rất nhiều người dùng thật; phạm vi ASN vẫn là bằng chứng có trọng số."
+    ),
 )
 def credential_stuffing(ctx: RuleContext) -> Finding | None:
     a, p = ctx.attempt, ctx.p
@@ -104,6 +108,7 @@ def credential_stuffing(ctx: RuleContext) -> Finding | None:
         return Finding(
             f"ASN {a.asn} thử {asn_users} tài khoản khác nhau, {asn_fails} lần sai/{window_text(p.window_s)} (ngưỡng {p.asn_min_users} TK / {p.asn_min_fails} lần).",
             {"scope": "asn", "asn": a.asn, "fails": asn_fails, "distinct_users": asn_users, "successes": asn_oks},
+            forces=False,  # MR27: cả một nhà mạng — bằng chứng, không ép cảnh báo (xem notes)
         )
     return None
 
@@ -125,8 +130,15 @@ def credential_stuffing(ctx: RuleContext) -> Finding | None:
         Param("max_fails_per_hour", 120, "tối đa số lần sai của IP trong 1 giờ gần nhất; 120 = 10 lần/5 phút, ngưỡng nhồi thông tin quy ra giờ (nhanh hơn thì không phải \"chậm\")", "lần", 1, 100_000),
         Param("asn_min_users", 40, "số tài khoản khác nhau tối thiểu từ một ASN (phạm vi ASN)", "tên", 3, 1_000_000),
         Param("asn_max_fails_per_hour", 600, "tối đa số lần sai của ASN trong 1 giờ gần nhất (nhiều IP nên cho phép nhiều hơn một IP)", "lần", 1, 1_000_000),
+        Param("max_success_ratio", 0.2, "phạm vi IP: quá tỉ lệ thành công này (trên tổng thử của IP trong cửa sổ) thì coi là NAT có nhiều người dùng thật", "", 0.0, 1.0),
     ),
-    notes="Đếm tài khoản khác nhau bị chặn ở 200 (K.CAP) nên tỉ lệ lần sai/tài khoản là cận trên; IP tấn công khổng lồ do `credential_stuffing` bắt.",
+    min_action="alert",
+    notes=(
+        "Đếm tài khoản khác nhau bị chặn ở 200 (K.CAP) nên tỉ lệ lần sai/tài khoản là cận trên; IP tấn công khổng lồ do `credential_stuffing` bắt. MR27: thêm điều "
+        "kiện tỉ lệ thành công (0,2, đặt trước khi đo) — NAT văn phòng lớn có vài chục người gõ sai mỗi ngày nhưng phần lớn lần thử thành công, IP rải mật khẩu thì gần "
+        "như không bao giờ; hành động tối thiểu `alert` chỉ ở phạm vi IP (phạm vi ASN không ép — như `credential_stuffing`). Số đo RBA và bộ MR24: "
+        "docs/behavior-expansion-1.md."
+    ),
 )
 def password_spray_slow(ctx: RuleContext) -> Finding | None:
     a, p = ctx.attempt, ctx.p
@@ -139,10 +151,12 @@ def password_spray_slow(ctx: RuleContext) -> Finding | None:
     if users >= p.min_users:
         fails = store.log_count(K.fail_ip(a.ip), since)
         hourly = store.log_count(K.fail_ip(a.ip), hour)
-        if fails <= p.max_fails_per_user * users and hourly <= p.max_fails_per_hour:
+        oks = store.log_count(K.ok_ip(a.ip), since)
+        if fails <= p.max_fails_per_user * users and hourly <= p.max_fails_per_hour and oks <= p.max_success_ratio * (oks + fails):
             return Finding(
-                f"IP {a.ip} thử {users} tài khoản trong {window_text(p.window_s)}, mỗi tài khoản ≤ {p.max_fails_per_user:g} lần, chậm ({hourly} lần/giờ): rải mật khẩu.",
-                {"scope": "ip", "ip": a.ip, "distinct_users": users, "fails": fails, "fails_last_hour": hourly},
+                f"IP {a.ip} thử {users} tài khoản trong {window_text(p.window_s)}, mỗi tài khoản ≤ {p.max_fails_per_user:g} lần, chậm ({hourly} lần/giờ), "
+                f"{oks} lần thành công: rải mật khẩu.",
+                {"scope": "ip", "ip": a.ip, "distinct_users": users, "fails": fails, "fails_last_hour": hourly, "successes": oks},
             )
     if a.asn is None:
         return None
@@ -154,6 +168,7 @@ def password_spray_slow(ctx: RuleContext) -> Finding | None:
             return Finding(
                 f"ASN {a.asn} thử {asn_users} tài khoản trong {window_text(p.window_s)}, mỗi tài khoản ≤ {p.max_fails_per_user:g} lần: rải mật khẩu qua nhiều IP.",
                 {"scope": "asn", "asn": a.asn, "distinct_users": asn_users, "fails": asn_fails, "fails_last_hour": asn_hourly},
+                forces=False,  # MR27: phạm vi nhà mạng — bằng chứng, không ép cảnh báo
             )
     return None
 

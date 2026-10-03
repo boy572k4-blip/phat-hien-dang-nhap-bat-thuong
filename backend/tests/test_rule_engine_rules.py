@@ -134,6 +134,43 @@ def test_password_spray_also_works_per_asn():
     assert hit(results[39], "password_spray_slow").evidence["scope"] == "asn"
 
 
+def test_password_spray_skips_an_office_nat_where_most_attempts_succeed():
+    """MR27: NAT văn phòng lớn — 20 nhân viên mỗi người gõ sai một lần rồi vào được: đúng dáng rải mật khẩu nhưng tỉ lệ thành công 50%."""
+    office = []
+    for i in range(20):
+        office += [make(i * 1500, username=f"staff{i}", ip="5.5.5.5"), make(i * 1500 + 30, username=f"staff{i}", ip="5.5.5.5", success=True)]
+    assert fired(run(RuleEngine(), office), "password_spray_slow") == []
+    spray = run(RuleEngine(), [make(i * 1800, username=f"user{i}", ip="4.4.4.8") for i in range(15)] + [make(15 * 1800, username="user0", ip="4.4.4.8", success=True)])
+    assert fired(spray, "password_spray_slow") == [14]  # một lần trúng mật khẩu không cứu được IP rải (1/16 thành công)
+
+
+def test_wide_asn_scope_findings_are_evidence_that_never_forces_a_minimum_action():
+    """MR27: phạm vi ASN (cả một nhà mạng) của nhồi thông tin / rải mật khẩu không được ép hành động tối thiểu; phạm vi IP vẫn ép."""
+    stuffing_asn = run(RuleEngine(), [make(i, username=f"u{i % 25}", ip=f"10.1.0.{i % 8}", asn=64500) for i in range(40)])
+    assert hit(stuffing_asn[39], "credential_stuffing").forces is False
+    spray_asn = run(RuleEngine(), [make(i * 900, username=f"user{i}", ip=f"6.6.{i // 200}.{i % 200}", asn=64501) for i in range(60)])
+    assert hit(spray_asn[39], "password_spray_slow").forces is False
+    stuffing_ip = run(RuleEngine(), [make(i, username=f"u{i % 5}", ip="9.9.9.9") for i in range(10)])
+    assert hit(stuffing_ip[9], "credential_stuffing").forces is True
+
+
+# ------------------------------------------------------------------------------------------------ success_burst (MR27)
+
+
+def test_success_burst_fires_from_the_eighth_success_within_ten_minutes():
+    results = run(RuleEngine(), [make(i * 40, success=True, ip=f"8.8.8.{i % 2}") for i in range(10)])
+    assert fired(results, "success_burst") == [7, 8, 9]
+    found = hit(results[7], "success_burst")
+    assert found.evidence["successes"] == 8 and found.evidence["distinct_contexts"] == 2 and found.techniques == ("T1078",)
+
+
+def test_success_burst_ignores_a_few_relogins_slow_logins_failures_and_unknown_names():
+    assert fired(run(RuleEngine(), [make(i * 60, success=True) for i in range(7)]), "success_burst") == []  # 7 lần: dưới ngưỡng
+    assert fired(run(RuleEngine(), [make(i * 120, success=True) for i in range(10)]), "success_burst") == []  # cửa sổ 10 phút chỉ còn 5
+    assert fired(run(RuleEngine(), [make(i * 10) for i in range(12)]), "success_burst") == []  # thất bại: việc của brute_force
+    assert fired(run(RuleEngine(), [make(i * 10, success=True, exists=False) for i in range(12)]), "success_burst") == []
+
+
 # ------------------------------------------------------------------------------------------------ distributed_bruteforce
 
 

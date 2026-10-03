@@ -47,6 +47,13 @@ venv\Scripts\python.exe -m ml.corpus.run --split both --workers 6   # ~3 phút -
 - Vì nền báo nhầm cao, tỉ lệ "phát hiện" của các họ tấn công (đa số 100%) **chưa có ý nghĩa** — kể cả "mô phỏng tinh vi", vốn
   thiết kế để khó, cũng 100%. Phải hạ báo nhầm trước (MR25–MR26), rồi đo lại trên bộ đánh giá.
 
+## Mở rộng ở MR27
+
+Thêm 2 họ tấn công (`distributed_botnet_local` — botnet IP Việt Nam nhiều nhà mạng; `login_burst` — đăng nhập thành công dồn dập) và
+2 họ hợp lệ khó (`relogin` — đăng nhập lại 2–8 lần liền; `office_nat_day` — 15–25 nhân viên sau một NAT cả ngày, nhiều người gõ sai
+một lần): 29 họ, 870 biến thể mỗi phần. Bản chạy mở rộng ghi ra `ml/artifacts/corpus/mr27/` — bản MR24 (`ml/artifacts/corpus/*.jsonl`)
+giữ nguyên vì số "trước" của MR25 dựa trên nó. Mỗi luật khớp ghi thêm cờ `forces` (MR27). Số đo: [`behavior-expansion-1.md`](behavior-expansion-1.md).
+
 ## Giới hạn
 
 - Hành vi của kẻ tấn công và người dùng do nhóm định nghĩa — ví dụ kẻ tấn công thường dùng IP nước ngoài/ẩn danh, người dùng

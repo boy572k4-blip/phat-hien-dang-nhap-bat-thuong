@@ -1,4 +1,5 @@
-"""Nhóm "Tự động hoá": User-Agent bot, client kịch bản (curl, python-requests...), xoay User-Agent, nhịp thử đều như máy.
+"""Nhóm "Tự động hoá": User-Agent bot, client kịch bản (curl, python-requests...), xoay User-Agent, nhịp thử đều như máy, đăng nhập thành
+công dồn dập (MR27).
 
 Không luật nào ở đây kết luận "là tấn công" một mình: người dùng thật cũng có thể dùng script hợp lệ. Chúng cho biết lưu lượng do MÁY sinh ra; ý nghĩa
 được quyết định khi kết hợp với luật đoán mật khẩu và mô hình (MR11).
@@ -13,6 +14,7 @@ from app.detection.engine.messages import short, window_text
 from app.detection.engine.registry import Param, RuleContext, rule
 from app.detection.engine.types import Finding
 
+_DAY = 86_400
 CATEGORY = "Tự động hoá"
 
 # Dấu hiệu (chữ thường) của HTTP client/công cụ dò quét/trình duyệt không đầu hay gặp trong tấn công. `okhttp` cố ý KHÔNG có: là thư viện của ứng dụng Android thật.
@@ -130,4 +132,40 @@ def regular_rhythm(ctx: RuleContext) -> Finding | None:
     return Finding(
         f"IP {a.ip}: {p.samples} lần sai gần nhất cách nhau đều ~{mean:.2f}s (lệch {cv:.0%}) — nhịp của máy.",
         {"ip": a.ip, "samples": p.samples, "mean_interval_s": round(mean, 3), "cv": round(cv, 4)},
+    )
+
+
+@rule(
+    id="success_burst",
+    title="Đăng nhập thành công dồn dập",
+    category=CATEGORY,
+    severity="medium",
+    techniques=("T1078",),
+    description=(
+        "Một tài khoản đăng nhập THÀNH CÔNG nhiều lần trong vài phút — thông tin đăng nhập đang bị một công cụ tự động dùng (lấy phiên, cào dữ liệu, "
+        "kiểm tra tài khoản đã đánh cắp) hoặc bị chia cho nhiều người dùng cùng lúc."
+    ),
+    params=(
+        Param("window_s", 600, "độ dài cửa sổ", "giây", 60, _DAY),
+        Param("min_successes", 8, "số lần đăng nhập thành công tối thiểu vào một tài khoản trong cửa sổ", "lần", 2, 10_000),
+    ),
+    needs=("account",),
+    notes=(
+        "MR27, thay cho kiểu `rapid_fire` của tầng 3 (đã bắt 0%). Ngưỡng 8 lần/10 phút đặt trước khi đo: người thật đăng nhập lại 2–6 lần liền (hết phiên, nhiều "
+        "tab, đổi máy) là chuyện thường — nhãn `rapid_fire` 3–4 lần của bộ sinh dữ liệu Tuần 7 rơi đúng vào vùng đó nên KHÔNG được coi là tấn công. "
+        "Không đo được trên RBA (thời điểm có thành phần ngẫu nhiên — như `regular_rhythm`); số đo trên bộ MR24: docs/behavior-expansion-1.md."
+    ),
+)
+def success_burst(ctx: RuleContext) -> Finding | None:
+    a, p = ctx.attempt, ctx.p
+    if not a.success or a.user_key is None:
+        return None
+    since = ctx.since(p.window_s)
+    successes = ctx.store.log_count(K.ok_user(a.user_key), since)
+    if successes < p.min_successes:
+        return None
+    contexts = ctx.store.set_count(K.contexts_of_user(a.user_key), since, K.CAP)
+    return Finding(
+        f"Tài khoản '{a.username}' đăng nhập thành công {successes} lần/{window_text(p.window_s)} từ {contexts} cặp quốc gia/IP (ngưỡng {p.min_successes}).",
+        {"username": a.username, "successes": successes, "distinct_contexts": contexts, "window_s": p.window_s},
     )

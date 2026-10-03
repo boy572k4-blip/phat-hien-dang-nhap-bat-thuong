@@ -566,9 +566,21 @@ Các mục dưới đây đổi mô hình hoặc quy tắc nên cần đồng ý
 Một hành vi chỉ được tính "vững" khi: kịch bản tấn công (bộ đánh giá MR24) có cảnh báo nhờ CHÍNH tín hiệu đó, và lưu lượng hợp
 lệ khó không vượt mục tiêu báo nhầm. Mỗi hành vi cập nhật vào [`behavior-coverage-matrix.md`](behavior-coverage-matrix.md).
 
-- [ ] **MR27 [Lõi, M] Đợt 1 — 5 hành vi đã có luật nhưng chưa tự báo**: dò danh sách tài khoản; rải mật khẩu chậm; botnet phân
+- [x] **MR27 [Lõi, M] Đợt 1 — 5 hành vi đã có luật nhưng chưa tự báo**: dò danh sách tài khoản; rải mật khẩu chậm; botnet phân
   tán (thêm biến thể botnet cùng khu vực địa lý, chưa từng kiểm chứng); xoay UA; đăng nhập dồn dập (luật tốc độ thay tầng 3 đang
-  bắt 0%)
+  bắt 0%) — chi tiết và số đo: [`behavior-expansion-1.md`](behavior-expansion-1.md)
+  - [x] Đo "vững" đúng định nghĩa giai đoạn I (`ml/corpus/behaviors.py`): phát hiện nhờ CHÍNH tín hiệu ≥ 50% biến thể, báo nhầm của
+    tín hiệu ≤ 1% lần thử hợp lệ (đặt trước). Dò danh sách tài khoản, xoay UA, botnet phân tán: đã vững nhờ trọng số MR25 (100% / 100%
+    / 87%, 0% báo nhầm)
+  - [x] Rải mật khẩu chậm: điều kiện tỉ lệ thành công ≤ 0,2 + `min_action=alert` ở phạm vi IP → 100% / 0% (kể cả NAT văn phòng cả
+    ngày); RBA phạm vi IP 24,1 → 10,7/10.000. Phạm vi ASN của nhồi thông tin/rải mật khẩu không còn ép hành động (`forces`): RBA
+    cảnh báo bị ép trên dòng bình thường ~685 → ~11/10.000
+  - [x] Botnet cùng khu vực (họ mới, IP Việt Nam nhiều nhà mạng): 83% nhờ `distributed_bruteforce`, 0% báo nhầm
+  - [x] Đăng nhập dồn dập: luật mới `success_burst` (≥ 8 lần thành công/10 phút) → 80% (đúng các biến thể ≥ 8), báo nhầm 0,03%;
+    RBA: ≥ 3 lần (kiểu `rapid_fire` cũ) khớp 3,5–4,5% đăng nhập hợp lệ — xác nhận không phải tấn công
+  - [x] Cổng "cùng phiên" của `ml_geo` (≤ 30 phút, cùng IP + thiết bị): "đăng nhập lại" bị cảnh báo 64 → 38/121 (cùng máy 0/57)
+  - **Kết quả**: 14/18 hành vi đo được trên bộ dữ liệu vững; ma trận 26 hành vi: **vững 21** (CP5: 18). Cả hệ thống trên 25 họ cũ
+    không đổi (19,3% / 1,67% / 94,7%); 20 kịch bản không xấu đi
 - [ ] **MR28 [Nên, M] Đợt 2 — 3 hành vi mới**: đoán mã OTP liên tục (`verify-otp` hiện chỉ đếm số lần trong một challenge, không
   ghi sự kiện); cố đăng nhập vào tài khoản đang bị khoá (đếm từ audit `reject_blocked_login`); một IP đăng nhập THÀNH CÔNG vào
   nhiều tài khoản

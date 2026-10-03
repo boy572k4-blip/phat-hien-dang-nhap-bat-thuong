@@ -31,7 +31,7 @@ import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Iterator
 
 from sqlalchemy import or_
@@ -61,6 +61,9 @@ logger = logging.getLogger("pipeline")
 
 # Hành động nặng nhất của sự cố -> severity của cảnh báo.
 _SEVERITY = {"alert": "medium", "step_up": "high", "lock": "high"}
+# MR27: lần thử trong vòng chừng này sau một lần THÀNH CÔNG cùng IP + cùng thiết bị là cùng một phiên làm việc — mô hình địa lý-thời gian
+# không chấm lại (đặt trước khi đo; xem `_continues_last_session`).
+GEO_SAME_SESSION = timedelta(minutes=30)
 
 
 @dataclass
@@ -125,6 +128,24 @@ def _record_attempt(db: Session, *, username: str, user_id: int | None, success:
 # ------------------------------------------------------------------------------------------ bước 3: mô hình
 
 
+def _continues_last_session(db: Session, event: LoginEvent) -> bool:
+    """MR27 — lần thử này có nối tiếp lần THÀNH CÔNG gần nhất của tài khoản (trong `GEO_SAME_SESSION`, CÙNG IP và CÙNG thiết bị) không.
+    Nếu có, nó không mang thông tin vị trí/thiết bị/giờ nào mới — ngữ cảnh đó vừa được chấm ở lần trước. Lý do cần: sau khi MR23 sửa lệch
+    đặc trưng `minutes_since_last_login`, mô hình (học trên dữ liệu chỉ có khoảng cách ngắn ở nhãn bất thường `rapid_fire`) báo động
+    53% lần chính chủ đăng nhập lại vài lần liền (họ `relogin` của bộ MR24, đo ở MR27). Đăng nhập dồn dập thật do luật `success_burst` lo."""
+    if event.user_id is None:
+        return False
+    at = event.created_at
+    last = (
+        db.query(LoginEvent.ip_address, LoginEvent.device_fingerprint)
+        .filter(LoginEvent.user_id == event.user_id, LoginEvent.success.is_(True), LoginEvent.id != event.id,
+                LoginEvent.created_at <= at, LoginEvent.created_at >= at - GEO_SAME_SESSION)
+        .order_by(LoginEvent.created_at.desc(), LoginEvent.id.desc())
+        .first()
+    )
+    return last is not None and last.ip_address == event.ip_address and last.device_fingerprint == event.device_fingerprint
+
+
 def _score_models(db: Session, *, event: LoginEvent, user: User | None, context: LoginContext, features: dict | None) -> _Models:
     engine = hybrid_runtime.get_engine()
     with perf.timer("ml_inference"):
@@ -132,9 +153,10 @@ def _score_models(db: Session, *, event: LoginEvent, user: User | None, context:
 
     # Mô hình địa lý-thời gian (MR22): chỉ chấm tài khoản đã có đủ lần thành công TRƯỚC lần này — lần đầu của MỌI tài
     # khoản đều là "thiết bị mới + vị trí mới" theo định nghĩa (đo ở ml/train.py). Đếm từ chính lịch sử của ngữ cảnh.
+    # MR27: không chấm lại lần thử nối tiếp phiên vừa thành công (cùng IP + thiết bị, `_continues_last_session`).
     geo = geo_label = None
     prior_successes = context.account.n_success if context.account is not None else 0
-    if user is not None and prior_successes >= ml_model.cold_start_min_successes():
+    if user is not None and prior_successes >= ml_model.cold_start_min_successes() and not _continues_last_session(db, event):
         with perf.timer("geo_model"):
             baseline = db.query(UserBaseline).filter(UserBaseline.user_id == user.id).first()
             geo_features = compute_realtime_features(

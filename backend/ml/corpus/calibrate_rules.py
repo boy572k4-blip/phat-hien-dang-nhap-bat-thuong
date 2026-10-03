@@ -53,6 +53,14 @@ N_BOOT = 500
 REPORT_PATH = CORPUS_DIR / "mr25_report.json"
 
 
+def rule_hits(step: dict) -> list[RuleHit]:
+    """Luật đã khớp của một lần thử như `combine_risk` nhận. Bản ghi MR24–MR26: `[luật, shadow]`; từ MR27: `[luật, shadow, forces]`."""
+    return [
+        RuleHit(h[0], "medium", "", {}, "shadow" if h[1] else "enforce", (), bool(h[2]) if len(h) > 2 else True)
+        for h in step.get("hits", [])
+    ]
+
+
 def load(split: str) -> list[dict]:
     with (CORPUS_DIR / f"{split}.jsonl").open(encoding="utf-8") as f:
         return [json.loads(line) for line in f]
@@ -106,7 +114,9 @@ def calibrate(records: list[dict], bands: ActionBands, *, n_boot: int = N_BOOT, 
 
 
 def registry_with(min_actions: dict[str, str | None]) -> dict:
-    return {rule: (dataclasses.replace(spec, min_action=min_actions[rule]) if rule in min_actions else spec) for rule, spec in REGISTRY.items()}
+    """Sổ đăng ký với mức tối thiểu ĐÚNG như `min_actions` (trọn bộ của một thời điểm, vd MR21): luật không có trong đó thì không có mức
+    — để phát lại cấu hình cũ không lẫn mức thêm sau này (MR27 thêm `password_spray_slow`)."""
+    return {rule: dataclasses.replace(spec, min_action=min_actions.get(rule)) for rule, spec in REGISTRY.items()}
 
 
 def replay(records: list[dict], weights: RuleWeights, bands: ActionBands, *, with_models: bool = True, registry=None) -> list[list[str]]:
@@ -116,7 +126,7 @@ def replay(records: list[dict], weights: RuleWeights, bands: ActionBands, *, wit
     for r in records:
         actions = []
         for s in r["steps"]:
-            hits = [RuleHit(rule, "medium", "", {}, "shadow" if shadow else "enforce", ()) for rule, shadow in s.get("hits", [])]
+            hits = rule_hits(s)
             result = combine_risk(
                 ml_probability=s.get("ml") if with_models else None, hits=hits, weights=weights, bands=bands,
                 ml_geo_probability=s.get("ml_geo") if with_models else None, registry=registry,
@@ -159,10 +169,10 @@ def forced_on_legit(records: list[dict]) -> dict[str, dict]:
             if s["malicious"]:
                 continue
             n_ben += 1
-            for rule, shadow in s.get("hits", []):
-                if rule in out and not shadow:
-                    out[rule]["legit_forced"] += 1
-                    out[rule]["families"][r["family"]] += 1
+            for hit in rule_hits(s):
+                if hit.rule_id in out and not hit.is_shadow and hit.forces:
+                    out[hit.rule_id]["legit_forced"] += 1
+                    out[hit.rule_id]["families"][r["family"]] += 1
     return {rule: {**v, "legit_forced_rate": round(v["legit_forced"] / n_ben, 4), "families": dict(v["families"])} for rule, v in out.items()}
 
 
@@ -176,7 +186,7 @@ def replay_fidelity(records: list[dict], weights: RuleWeights, bands: ActionBand
             n += 1
             if a == s["action"]:
                 same += 1
-            elif sum(rule in reputation for rule, _ in s.get("hits", [])) >= 2:
+            elif sum(h[0] in reputation for h in s.get("hits", [])) >= 2:
                 explained += 1
     return {"attempts": n, "identical": same, "differ_only_by_reputation_max": explained, "unexplained": n - same - explained}
 

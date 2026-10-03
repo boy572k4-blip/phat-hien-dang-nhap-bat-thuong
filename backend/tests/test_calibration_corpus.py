@@ -87,8 +87,22 @@ def test_one_variant_runs_through_the_real_pipeline_and_records_raw_evidence(poo
     assert record["kind"] == "attack" and len(record["steps"]) == len(variant.steps) == record["events"]
     last = record["steps"][-1]
     assert last["malicious"] and last["success"] and last["action"] in ("alert", "step_up", "lock")
-    assert any(rule == "success_after_failures" for rule, _shadow in last["hits"])
+    assert any(h[0] == "success_after_failures" for h in last["hits"])
     assert {"ml", "ml_geo", "hits", "forced_by", "score"} <= set(last)
     assert record["alerts"] == 1  # một sự cố (MR23)
     summary = run.summarize([record])
     assert summary["success_after_failures"]["detected"] == 1.0
+
+
+def test_mr27_families_stay_in_the_region_or_pattern_they_claim(pools):
+    from ml.corpus.ip_pools import VN_POOLS
+
+    for seed in range(10):
+        local = build_variant("distributed_botnet_local", seed, pools)
+        assert {s.ip.pool for s in local.steps} <= set(VN_POOLS) and len({s.ip.ip for s in local.steps}) >= 5  # cùng khu vực, nhiều IP
+        burst = build_variant("login_burst", seed, pools)
+        assert all(s.success and s.malicious for s in burst.steps) and 5 <= len(burst.steps) <= 20
+        relogin = build_variant("relogin", seed, pools)
+        assert relogin.kind == "benign" and all(s.success for s in relogin.steps) and len(relogin.steps) <= 8
+        office = build_variant("office_nat_day", seed, pools)
+        assert len({s.ip.ip for s in office.steps}) == 1 and len({s.username for s in office.steps if not s.success}) >= 5

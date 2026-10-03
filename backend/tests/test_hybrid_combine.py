@@ -186,7 +186,19 @@ def test_the_real_registry_ships_the_min_actions_settled_by_mr25():
     assert forcing == {
         "brute_force": "alert", "credential_stuffing": "alert", "impossible_travel": "alert",
         "success_after_failures": "step_up", "blocklist_hit": "lock",
+        "password_spray_slow": "alert",  # MR27: chỉ phạm vi IP, kèm điều kiện tỉ lệ thành công
     }
+
+
+def test_a_hit_that_may_not_force_is_still_weighted_evidence():
+    """MR27: lần khớp `forces=False` (phạm vi ASN) góp trọng số như thường nhưng không ép hành động tối thiểu của luật."""
+    wide = RuleHit("credential_stuffing", "high", "", {"scope": "asn"}, "enforce", (), False)
+    narrow = RuleHit("credential_stuffing", "high", "", {"scope": "ip"}, "enforce", (), True)
+    w = weights({"credential_stuffing": 0.1})
+    assert combine_risk(ml_probability=None, hits=[wide], weights=w, bands=BANDS).action == "allow"
+    assert combine_risk(ml_probability=None, hits=[wide], weights=w, bands=BANDS).rule_probability == pytest.approx(0.1)
+    forced = combine_risk(ml_probability=None, hits=[narrow], weights=w, bands=BANDS)
+    assert forced.action == "alert" and forced.overridden_by == "credential_stuffing"
 
 
 # ------------------------------------------------------------------------------------------------ giải thích, trùng lặp, dữ liệu tuỳ ý

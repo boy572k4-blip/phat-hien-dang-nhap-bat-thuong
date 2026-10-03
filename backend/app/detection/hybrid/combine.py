@@ -131,8 +131,9 @@ def combine_risk(
         is_reputation = spec is not None and spec.category == REPUTATION_CATEGORY
         (reputation_probs if is_reputation else rule_probs).append(weight)
         contributions.append(Contribution(hit.rule_id, hit.message, weight, "reputation" if is_reputation else "rule"))
-        # Hành động tối thiểu: chỉ luật enforce; nhiều luật cùng ép thì lấy mức NẶNG nhất (cùng mức: luật khớp trước).
-        if spec is not None and spec.min_action is not None and not hit.is_shadow and ACTION_RANK[spec.min_action] > ACTION_RANK[forced_action]:
+        # Hành động tối thiểu: chỉ luật enforce, và chỉ lần khớp được phép ép (`RuleHit.forces` — phạm vi ASN thì không, MR27);
+        # nhiều luật cùng ép thì lấy mức NẶNG nhất (cùng mức: luật khớp trước).
+        if spec is not None and spec.min_action is not None and not hit.is_shadow and hit.forces and ACTION_RANK[spec.min_action] > ACTION_RANK[forced_action]:
             forced_action, forced_by = spec.min_action, hit.rule_id
 
     rule_probability = noisy_or(rule_probs)

@@ -98,3 +98,25 @@ def test_an_unflagged_login_past_the_gate_adds_only_weak_evidence(db_session, mo
     assert results[-1].hybrid_action == "allow"
     assert results[-1].hybrid_risk_score < hybrid_runtime.get_engine().profile.bands.alert_at
     assert db_session.query(Alert).count() == 0
+
+
+def test_a_relogin_from_the_same_device_and_ip_right_after_a_success_is_not_rescored(db_session, monkeypatch):
+    """MR27: đăng nhập lại ngay (cùng IP, cùng thiết bị, ≤ 30 phút sau lần thành công) không mang ngữ cảnh mới — mô hình không chấm lại.
+    Đổi thiết bị, đổi IP hay quá 30 phút thì vẫn chấm."""
+    calls = []
+    monkeypatch.setattr("app.detection.pipeline.ml_model.predict", lambda features: calls.append(features) or {"is_anomaly": True, "anomaly_score": 0.7, "margin": MARGIN})
+    user = _user(db_session)
+    _daily_logins(user, 6)  # lần thứ 6 qua cổng cold-start -> 1 lần chấm
+    assert len(calls) == 1
+    last_day = BASE + timedelta(days=5)
+
+    def login(minutes, ip=HANOI_FPT_IP, ua=CHROME_UA):
+        return asyncio.run(run_detection_pipeline(username=user.username, user_id=user.id, success=True, ip=ip, user_agent=ua, timestamp=last_day + timedelta(minutes=minutes)))
+
+    assert login(2).hybrid_action == "allow" and len(calls) == 1  # cùng phiên: không chấm
+    login(4, ua="Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1")
+    assert len(calls) == 2  # thiết bị khác: chấm
+    login(5, ip="203.162.4.191")
+    assert len(calls) == 3  # IP khác: chấm
+    login(5 + 40, ip="203.162.4.191")
+    assert len(calls) == 4  # quá 30 phút sau lần thành công gần nhất: chấm

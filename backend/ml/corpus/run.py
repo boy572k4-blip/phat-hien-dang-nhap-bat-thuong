@@ -82,7 +82,7 @@ def _init_worker(with_model_inputs: bool = False) -> None:
         _capture.append({
             "ml": None if result.ml_probability is None else round(result.ml_probability, 5),
             "ml_geo": None if result.ml_geo_probability is None else round(result.ml_geo_probability, 5),
-            "hits": [[h.rule_id, bool(h.is_shadow)] for h in hits],
+            "hits": [[h.rule_id, bool(h.is_shadow), bool(h.forces)] for h in hits],  # forces: MR27 (phạm vi ASN không ép)
             "forced_by": result.overridden_by,
             **(_model_inputs(self, features) if with_model_inputs else {}),
         })

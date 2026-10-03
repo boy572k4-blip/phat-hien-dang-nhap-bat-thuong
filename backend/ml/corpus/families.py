@@ -301,6 +301,32 @@ def regular_rhythm(rng, pools, seed):
     return users, tuple(history), steps
 
 
+def distributed_botnet_local(rng, pools, seed):
+    """MR27 — botnet CÙNG khu vực: 5–10 IP dân cư Việt Nam (nhiều nhà mạng), mỗi IP 1–2 lần sai vào một tài khoản. Không có quốc gia lạ hay
+    di chuyển bất khả thi để dựa vào (MR18 chỉ bắt được botnet nước ngoài nhờ khoảng cách địa lý)."""
+    user, home, ua, habit, history = _victim(rng, pools, "distributed_botnet_local", seed)
+    candidates = [ip for name in VN_POOLS for ip in pools[name] if ip.ip != home.ip]
+    bots = rng.sample(candidates, rng.randint(5, 10))
+    window = rng.uniform(15, 60) * MINUTE
+    start = rng.uniform(0, DAY - 2 * HOUR)
+    steps = [Step(user, False, ip, start + rng.uniform(0, window), rng.choice(BROWSER_UAS + MOBILE_UAS), True)
+             for ip in bots for _ in range(rng.randint(1, 2))]
+    return (user,), history, steps
+
+
+def login_burst(rng, pools, seed):
+    """MR27 — đăng nhập THÀNH CÔNG dồn dập bằng thông tin đã đánh cắp (công cụ lấy phiên/cào dữ liệu): 5–20 lần, cách nhau 10–90 giây, từ
+    1–2 IP của kẻ tấn công. Có biến thể dưới ngưỡng luật (8 lần/10 phút)."""
+    user, home, ua, habit, history = _victim(rng, pools, "login_burst", seed)
+    ips = [_attacker_ip(rng, pools, home) for _ in range(rng.randint(1, 2))]
+    attacker_ua = rng.choice(SCRIPT_UAS) if rng.random() < 0.5 else rng.choice(BROWSER_UAS)
+    t, steps = rng.uniform(0, DAY - HOUR), []
+    for _ in range(rng.randint(5, 20)):
+        steps.append(Step(user, True, rng.choice(ips), t, attacker_ua, True))
+        t += rng.uniform(10, 90)
+    return (user,), history, steps
+
+
 # ------------------------------------------------------------------------------------------------ họ hợp lệ "khó"
 
 
@@ -402,14 +428,49 @@ def night_login(rng, pools, seed):
     return (user,), history, steps
 
 
+def relogin(rng, pools, seed):
+    """MR27 — chính chủ đăng nhập lại liên tục vài lần (hết phiên, nhiều tab, đổi giữa máy tính và điện thoại): 2–8 lần cách nhau 15–150
+    giây ở nhà; 8 lần chỉ ở ~10% biến thể (ca xấu nhất: ứng dụng lỗi phiên). Đối chứng cho luật đăng nhập dồn dập."""
+    user, home, ua, habit, history = _victim(rng, pools, "relogin", seed)
+    phone = rng.choice(MOBILE_UAS)
+    n = rng.choice((2, 2, 3, 3, 3, 4, 4, 5, 6, 8))
+    t, steps = habit + rng.uniform(-HOUR, HOUR), []
+    for _ in range(n):
+        steps.append(Step(user, True, home, t, ua if rng.random() < 0.7 else phone))
+        t += rng.uniform(15, 150)
+    return (user,), history, steps
+
+
+def office_nat_day(rng, pools, seed):
+    """MR27 — NAT văn phòng LỚN cả ngày làm việc: 15–25 nhân viên cùng một IP, mỗi người 1–2 lần đăng nhập trong 8 giờ, 60–90% có một lần
+    gõ sai trước — nhiều tài khoản khác nhau sai ở một IP, rải rác, mỗi tài khoản một lần: đúng dáng "rải mật khẩu chậm". Khác `office_nat`
+    (5–15 người trong một giờ, giống nhồi thông tin)."""
+    office = _ip(rng, pools, VN_POOLS)
+    accounts = tuple(_account("office_nat_day", seed, i) for i in range(rng.randint(15, 25)))
+    typo_rate = rng.uniform(0.6, 0.9)
+    history, steps = [], []
+    start = rng.uniform(0, 2) * HOUR  # 07:00–09:00 giờ Việt Nam
+    for user in accounts:
+        ua = rng.choice(BROWSER_UAS)
+        history += _history(rng, user, office, ua, n=rng.randint(5, 20), habit=start + rng.uniform(0, HOUR))
+        for _ in range(rng.randint(1, 2)):
+            t = start + rng.uniform(0, 8 * HOUR)
+            if rng.random() < typo_rate:
+                steps.append(Step(user, False, office, t, ua))
+                t += rng.uniform(10, 60)
+            steps.append(Step(user, True, office, t, ua))
+    return accounts, tuple(history), steps
+
+
 FAMILIES: dict[str, tuple[str, Callable]] = {
     **{f.__name__: ("attack", f) for f in (
         brute_force, credential_stuffing, password_spray_slow, distributed_botnet, ua_rotation, account_enumeration,
         impossible_travel, dormant_account, targeted_mimic, same_country_proxy, success_after_failures, anonymizer_login,
-        bot_client, country_hop, regular_rhythm,
+        bot_client, country_hop, regular_rhythm, distributed_botnet_local, login_burst,  # 2 họ cuối: MR27
     )},
     **{f.__name__: ("benign", f) for f in (
         routine, new_account, typo, heavy_typo, vpn_user, office_nat, business_travel, new_device, mobile_isp_switch, night_login,
+        relogin, office_nat_day,  # MR27
     )},
 }
 

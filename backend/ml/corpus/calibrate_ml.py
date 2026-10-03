@@ -31,9 +31,8 @@ from pathlib import Path
 
 import numpy as np
 
-from app.detection.engine.types import RuleHit
 from app.detection.hybrid import HybridProfile, MlDomainShift, combine_risk
-from ml.corpus.calibrate_rules import CORPUS_DIR, PROFILE_PATH, metrics
+from ml.corpus.calibrate_rules import CORPUS_DIR, PROFILE_PATH, metrics, rule_hits
 
 MR26_DIR = CORPUS_DIR / "mr26"
 REPORT_PATH = MR26_DIR / "mr26_report.json"
@@ -110,7 +109,7 @@ def replay(records: list[dict], profile: HybridProfile, *, with_rules: bool = Tr
             geo = s.get("ml_geo") if with_rules else None
             if geo is not None and geo_cap is not None:
                 geo = min(geo, geo_cap)
-            hits = [RuleHit(rule, "medium", "", {}, "shadow" if shadow else "enforce", ()) for rule, shadow in s.get("hits", [])] if with_rules else []
+            hits = rule_hits(s) if with_rules else []
             actions.append(combine_risk(ml_probability=ml, ml_geo_probability=geo, hits=hits, weights=profile.weights, bands=profile.bands).action)
         out.append(actions)
     return out

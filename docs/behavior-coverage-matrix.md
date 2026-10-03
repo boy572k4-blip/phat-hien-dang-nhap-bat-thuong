@@ -156,6 +156,18 @@ phát hiện của kịch bản tấn công nào; kịch bản hợp lệ "theo 
 Tổng hợp 25 hành vi: **vững 18** (+8), **phụ thuộc hoàn cảnh 3** (rải mật khẩu chậm, nhiều quốc gia cùng lúc, proxy cùng nước),
 **không cảnh báo 3** (datacenter, VPN — cố ý, một mình loại IP không đủ cảnh báo; đăng nhập dồn dập), **mơ hồ có chủ đích 1**.
 
+## Cập nhật sau MR27
+
+MR27 ([`behavior-expansion-1.md`](behavior-expansion-1.md)) đo "vững" đúng định nghĩa giai đoạn I trên bộ đánh giá MR24 mở rộng
+(phát hiện nhờ chính tín hiệu ≥ 50% biến thể, báo nhầm của chính tín hiệu ≤ 1% lần thử hợp lệ): **14/18** hành vi đo được trên bộ dữ
+liệu là vững. Thay đổi so với CP5: **rải mật khẩu chậm** thành vững (điều kiện tỉ lệ thành công + hành động tối thiểu ở phạm vi IP);
+**đăng nhập dồn dập** thành vững (luật mới `success_burst`, ≥ 8 lần thành công/10 phút — kiểu `rapid_fire` 3–4 lần cũ không coi là tấn
+công); thêm hành vi **botnet phân tán cùng khu vực** (IP Việt Nam) — vững (83%).
+
+Tổng hợp 26 hành vi: **vững 21**, **phụ thuộc hoàn cảnh 2** (nhiều quốc gia cùng lúc, proxy cùng nước), **không cảnh báo 2** (datacenter,
+VPN — cố ý), **mơ hồ có chủ đích 1**. ⚠️ "Dò mật khẩu một tài khoản" và "thành công sau chuỗi sai" vững theo định nghĩa gộp nhưng với riêng
+họ "quên mật khẩu" báo nhầm 11–14% (đếm số lần sai không phân biệt được).
+
 ## Nguồn dữ liệu
 
 Mọi con số trong bảng lấy TRỰC TIẾP từ tài liệu đã dẫn — không tính lại riêng cho bảng này. `[Đo được thật]` nghĩa là

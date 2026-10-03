@@ -187,6 +187,16 @@
     "n": 0,
     "ci95": null,
     "source": "default"
+   },
+   "success_burst": {
+    "weight": 0.57,
+    "calibrated": true,
+    "n": 165,
+    "ci95": [
+     0.7208,
+     0.9674
+    ],
+    "source": "corpus_mr24_capped"
    }
   },
   "default_weight": 0.05

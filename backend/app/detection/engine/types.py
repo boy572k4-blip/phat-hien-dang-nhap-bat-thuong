@@ -123,6 +123,10 @@ class Finding:
     message: str  # câu ngắn tiếng Việt, cùng phong cách chuỗi cảnh báo hiện có
     evidence: Mapping[str, Any] = field(default_factory=dict)
     severity: str | None = None  # None = dùng mức mặc định của luật
+    # MR27: False = lần khớp ở phạm vi RỘNG (cả một nhà mạng/ASN) — vẫn là bằng chứng có trọng số nhưng KHÔNG được ép hành động
+    # tối thiểu của luật. Đo trên RBA: phạm vi ASN của nhồi thông tin/rải mật khẩu khớp 684/532 lần trên 10.000 đăng nhập hợp lệ,
+    # phạm vi IP chỉ 0,7/24 — một nhà mạng gom hàng triệu người dùng thật.
+    forces: bool = True
 
 
 @dataclass(frozen=True)
@@ -131,8 +135,9 @@ class RuleHit:
     severity: str
     message: str
     evidence: Mapping[str, Any]
-    mode: str  # enforce (tạo cảnh báo) | shadow (chỉ ghi nhận, không tạo cảnh báo)
+    mode: str  # enforce (bằng chứng + được ép hành động tối thiểu) | shadow (chỉ là bằng chứng, MR21)
     techniques: tuple[str, ...]
+    forces: bool = True  # `Finding.forces` (MR27): False thì kể cả ở chế độ enforce cũng không ép hành động tối thiểu
 
     @property
     def is_shadow(self) -> bool:

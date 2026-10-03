@@ -66,7 +66,7 @@ Mọi trọng số trong hồ sơ giờ có trường `source`: `rba` / `default
 
 | Luật | Mức | Lần thử hợp lệ bị chính luật ép (bộ đánh giá) | Quyết định |
 |---|---|---|---|
-| `credential_stuffing` | alert | 0 (kể cả 5–15 đồng nghiệp sau một NAT văn phòng) | giữ |
+| `credential_stuffing` | alert | 0 (kể cả 5–15 đồng nghiệp sau một NAT văn phòng) | giữ — từ MR27 chỉ phạm vi IP ép (phạm vi ASN báo nhầm 684/10.000 trên RBA, [`behavior-expansion-1.md`](behavior-expansion-1.md)) |
 | `impossible_travel` | alert | 0 (kể cả đi công tác bằng máy bay) | giữ |
 | `blocklist_hit` | lock | không đo được (không có mẫu) — quyết định của quản trị viên | giữ |
 | `success_after_failures` | step_up | 20 (1,5%) — toàn bộ "quên mật khẩu" (sai 4–6 lần rồi đúng) | giữ: bỏ thì chỉ 27% biến thể "đoán trúng mật khẩu" còn bị luật chặn |

@@ -14,6 +14,7 @@ Quy ước tên khoá: `<loại>:<đối tượng>:<giá trị>`. Loại nhật 
 | `fu:asn:<asn>`       | set  | tên đăng nhập đã thất bại từ ASN                      | thất bại, có ASN  |
 | `ok:ip:<ip>`         | log  | mỗi lần THÀNH CÔNG từ IP                              | thành công        |
 | `ok:asn:<asn>`       | log  | mỗi lần thành công từ ASN                             | thành công, có ASN|
+| `ok:u:<tài khoản>`   | log  | mỗi lần thành công vào tài khoản (MR27)               | thành công, có TK |
 | `ctx:u:<tài khoản>`  | set  | `quốc gia|ip` của đăng nhập thành công                | thành công, có TK |
 | `cc:u:<tên>`         | set  | quốc gia của MỌI lần thử vào tên đăng nhập            | có quốc gia       |
 
@@ -70,6 +71,10 @@ def ok_asn(asn: int) -> str:
     return f"ok:asn:{asn}"
 
 
+def ok_user(user_key: str) -> str:
+    return f"ok:u:{user_key}"
+
+
 def contexts_of_user(user_key: str) -> str:
     return f"ctx:u:{user_key}"
 
@@ -89,6 +94,7 @@ def record(store: WindowStore, a: LoginAttempt) -> None:
         if a.asn is not None:
             store.log_add(ok_asn(a.asn), a.ts, RETENTION_SHORT)
         if a.user_key is not None:
+            store.log_add(ok_user(a.user_key), a.ts, RETENTION_SHORT)
             store.set_add(contexts_of_user(a.user_key), a.ts, context_value(a.country, a.ip), RETENTION_SHORT)
     else:
         store.log_add(fail_user(a.username), a.ts, RETENTION_SHORT)

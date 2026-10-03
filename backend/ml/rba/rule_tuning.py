@@ -142,6 +142,7 @@ PROFILE_EXCLUDED = {
 NOT_EVALUABLE = {
     "username_enumeration": "chỉ khớp ở lần thử vào tên không tồn tại; RBA gộp các lần đó vào một user_id (45% số dòng), bị loại khỏi mẫu ML nên không có dòng nào để so với mô hình",
     "regular_rhythm": "dựa vào nhịp cách nhau vài giây, còn timestamp của RBA có thành phần ngẫu nhiên (thẻ dữ liệu)",
+    "success_burst": "dựa vào số lần thành công trong vài phút, còn timestamp của RBA có thành phần ngẫu nhiên (thẻ dữ liệu) — MR27",
     "impossible_travel": "RBA không có toạ độ",
     "tor_exit": "IP của RBA là tổng hợp, danh sách Tor công khai không áp dụng",
     "datacenter_ip": "IP của RBA là tổng hợp, danh sách datacenter công khai không áp dụng",

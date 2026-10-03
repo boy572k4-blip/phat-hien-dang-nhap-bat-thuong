@@ -122,7 +122,7 @@ class RuleEngine:
                 result.errors[spec.id] = f"{type(exc).__name__}: {exc}"
                 continue
             if finding is not None:
-                result.hits.append(RuleHit(spec.id, finding.severity or spec.severity, finding.message, dict(finding.evidence), mode, spec.techniques))
+                result.hits.append(RuleHit(spec.id, finding.severity or spec.severity, finding.message, dict(finding.evidence), mode, spec.techniques, finding.forces))
 
         if record:
             self.history.update(attempt)
