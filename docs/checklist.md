@@ -511,12 +511,17 @@ Các mục dưới đây đổi mô hình hoặc quy tắc nên cần đồng ý
 
 ## Giai đoạn H — Hiệu chỉnh và độ tin cậy (tuần 2 – tuần 3)
 
-- [ ] **MR24 [Lõi, L] Bộ dữ liệu hiệu chỉnh có nhãn** (tuần 2)
-  - [ ] Mỗi họ tấn công thành nhiều biến thể ngẫu nhiên có hạt giống (nạn nhân, IP thật lấy từ danh sách đã xác minh, nhịp, số
-    bước) — hiện mỗi kịch bản chạy đúng 1 lần
-  - [ ] Bộ sinh lưu lượng hợp lệ có "ca khó": người dùng VPN, văn phòng chung NAT, đi công tác, gõ sai vài lần, đăng nhập đêm,
-    tài khoản mới, nhiều nhà mạng Việt Nam
-  - [ ] Chia bộ hiệu chỉnh / bộ đánh giá theo hạt giống, tách rời (tránh tự chấm điểm cho mình)
+- [x] **MR24 [Lõi, L] Bộ dữ liệu hiệu chỉnh có nhãn** (tuần 2) — data card: [`calibration-corpus.md`](calibration-corpus.md)
+  - [x] 15 họ tấn công, mỗi họ biến thể ngẫu nhiên có seed (nạn nhân, IP, nhịp, số bước, giờ quen, thiết bị); IP thật: 13 kho
+    × 30 IP lấy mẫu trong dải nhà mạng và CHỈ giữ IP mà GeoLite2 xác nhận đúng quốc gia + ASN, cộng danh sách Tor/datacenter/VPN
+  - [x] 10 họ hợp lệ "khó": thói quen, tài khoản mới, gõ sai, quên mật khẩu, VPN, văn phòng NAT, đi công tác (tốc độ bay hợp
+    lý, có test), thiết bị mới, đổi wifi/4G nhiều nhà mạng Việt Nam, đăng nhập đêm
+  - [x] Bộ hiệu chỉnh seed 0–29 / bộ đánh giá seed 1000–1029, không giao nhau; nhãn từng lần thử; chạy qua pipeline thật (DB
+    SQLite + fakeredis riêng mỗi biến thể), ghi bằng chứng thô (luật, xác suất hai mô hình) để MR25/26 tính lại không cần chạy
+    lại (`python -m ml.corpus.run`, ~3 phút cho 1.500 biến thể)
+  - **Số đo nền** (cấu hình sau MR23): lần thử hợp lệ bị cảnh báo **31,4% / 33,5%** (hiệu chỉnh / đánh giá); AUC `hybrid_cp2`
+    **0,23** (ngược chiều — mạng Việt Nam cực hiếm trong RBA), `ml_geo` 0,93, điểm cuối 0,65. Tỉ lệ phát hiện tấn công (đa số
+    100%, kể cả "mô phỏng tinh vi") chưa có ý nghĩa khi nền báo nhầm cao như vậy — việc của MR25–MR26
   - Xong khi: ≥ 30 biến thể mỗi họ; data card riêng ghi rõ dữ liệu tự sinh và giới hạn
 - [ ] **MR25 [Lõi, M] Hiệu chỉnh lại trọng số luật và mức tối thiểu** (tuần 2)
   - [ ] Trọng số trên bộ MR24 cho 10 luật RBA không đo được (đang 5% mặc định) và 4 luật ra 0% do mẫu nhỏ hoặc do RBA làm nhiễu
