@@ -144,6 +144,18 @@ cảnh báo 44 → 40 (mọi tấn công vào một tài khoản giờ đúng m�
 User-Agent 2 → 1). Tổng hợp giữ nguyên: **vững 10**, phụ thuộc hoàn cảnh 7, không cảnh báo 7, mơ hồ 1
 ([`incident-unification.md`](incident-unification.md)).
 
+## Cập nhật sau MR25–MR26 (CP5)
+
+MR25 đo trọng số cho các luật RBA không đo được ([`rule-recalibration.md`](rule-recalibration.md)): 10 luật mạnh nay đủ **một
+mình** cảnh báo (trọng số 0,57 — trần "một mình chỉ cảnh báo"). Trên 20 kịch bản, luật dẫn đầu của từng kịch bản chính là tín
+hiệu của nó: dò danh sách tài khoản (`username_enumeration`), bot UA (`bot_user_agent`), Tor (`tor_exit`), thử từ nhiều quốc gia
+(`country_hop`), botnet phân tán (`distributed_bruteforce`), client kịch bản (`scripted_client`), xoay UA (`ua_rotation`), nhịp
+đều như máy (`regular_rhythm`, phát hiện từ bước 2 thay vì 5). MR26 ([`vn-recalibration.md`](vn-recalibration.md)) không đổi
+phát hiện của kịch bản tấn công nào; kịch bản hợp lệ "theo thói quen" hết bị báo.
+
+Tổng hợp 25 hành vi: **vững 18** (+8), **phụ thuộc hoàn cảnh 3** (rải mật khẩu chậm, nhiều quốc gia cùng lúc, proxy cùng nước),
+**không cảnh báo 3** (datacenter, VPN — cố ý, một mình loại IP không đủ cảnh báo; đăng nhập dồn dập), **mơ hồ có chủ đích 1**.
+
 ## Nguồn dữ liệu
 
 Mọi con số trong bảng lấy TRỰC TIẾP từ tài liệu đã dẫn — không tính lại riêng cho bảng này. `[Đo được thật]` nghĩa là

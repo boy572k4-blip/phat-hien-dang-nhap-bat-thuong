@@ -207,6 +207,54 @@ def geo_cap(bands: ActionBands) -> float:
 
 
 @dataclass(frozen=True)
+class MlDomainShift:
+    """MR26 — độ lệch miền của điểm thô `hybrid_cp2` giữa người dùng hợp lệ RBA và người dùng hợp lệ của hệ thống triển khai.
+
+    Điểm thô là −log10 "xác suất đuôi" so với đăng nhập hợp lệ CỦA RBA (`ml.rba.ensemble.HybridMinTail`). Đo trên bộ MR24:
+    đăng nhập THÀNH CÔNG hợp lệ kiểu Việt Nam cao hơn RBA một khoảng gần như không đổi ở mọi phân vị (median → 99,5%: 1,6–1,9)
+    — mạng/quốc gia Việt Nam cực hiếm trong RBA, và các đặc trưng độ hiếm toàn cục tính theo quy mô dữ liệu của CHÍNH hệ
+    thống. Trừ đi độ lệch đó rồi mới qua đường hiệu chỉnh RBA (`MonotonicCalibrator`): không train lại mô hình, không đổi
+    đường hiệu chỉnh — trên chính RBA độ lệch bằng 0 nên mọi số đo RBA giữ nguyên. Tách theo kết quả đăng nhập vì hai thành
+    phần của mô hình chỉ chấm lần thành công (phân phối điểm hai nhóm khác hẳn nhau).
+
+    `success`/`failure`: độ lệch trừ vào điểm thô (≥ 0 — không bao giờ làm mô hình NHẠY hơn bản đo trên RBA). `quantile`:
+    phân vị dùng để so (1 − FPR mục tiêu của `alert`), `source`/`ci95_success`/`n_reference`: nguồn và độ tin cậy của số đo.
+    `rba_median_success`: trung vị điểm thô của đăng nhập thành công hợp lệ ở RBA — trang sức khoẻ mô hình so với trung vị
+    trên log thật để ước lượng lại độ lệch (trung vị: ổn định với vài trăm lượt, độ lệch đo được gần như không đổi theo phân vị)."""
+
+    success: float = 0.0
+    failure: float = 0.0
+    quantile: float | None = None
+    source: str | None = None
+    ci95_success: tuple[float, float] | None = None
+    n_reference: int = 0
+    rba_median_success: float | None = None
+
+    def __post_init__(self) -> None:
+        for name, value in (("success", self.success), ("failure", self.failure)):
+            if not math.isfinite(value) or value < 0:
+                raise HybridConfigError(f"độ lệch miền '{name}' phải là số hữu hạn ≥ 0 (không làm mô hình nhạy hơn RBA)")
+
+    def adjust(self, raw: float, success: bool) -> float:
+        return raw - (self.success if success else self.failure)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"success": self.success, "failure": self.failure, "quantile": self.quantile, "source": self.source,
+                "ci95_success": None if self.ci95_success is None else list(self.ci95_success), "n_reference": self.n_reference,
+                "rba_median_success": self.rba_median_success}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "MlDomainShift":
+        try:
+            ci = data.get("ci95_success")
+            return cls(float(data.get("success", 0.0)), float(data.get("failure", 0.0)), data.get("quantile"), data.get("source"),
+                       None if ci is None else (float(ci[0]), float(ci[1])), int(data.get("n_reference", 0)),
+                       None if data.get("rba_median_success") is None else float(data["rba_median_success"]))
+        except (TypeError, ValueError, IndexError, AttributeError) as exc:
+            raise HybridConfigError(f"độ lệch miền sai định dạng: {exc}") from exc
+
+
+@dataclass(frozen=True)
 class HybridProfile:
     """Hồ sơ đầy đủ để chấm điểm: trọng số luật, ngưỡng hành động, đường hiệu chỉnh mô hình (None nếu chưa có/không dùng
     thành phần ML — `combine_risk` khi đó chỉ gộp luật và danh tiếng, giống triết lý "model không khả dụng thì bỏ qua,
@@ -215,18 +263,32 @@ class HybridProfile:
     weights: RuleWeights
     bands: ActionBands
     ml_calibration: MonotonicCalibrator | None = None
+    ml_domain_shift: MlDomainShift | None = None  # MR26; None = điểm thô dùng thẳng (miền RBA)
+
+    def ml_probability(self, raw: float, success: bool) -> float | None:
+        """Điểm thô `hybrid_cp2` -> xác suất: trừ độ lệch miền (nếu có) rồi qua đường hiệu chỉnh RBA."""
+        if self.ml_calibration is None:
+            return None
+        adjusted = raw if self.ml_domain_shift is None else self.ml_domain_shift.adjust(raw, success)
+        return float(self.ml_calibration.probability(adjusted))
 
     def to_dict(self) -> dict[str, Any]:
-        return {"rule_weights": self.weights.to_dict(), "bands": self.bands.to_dict(), "ml_calibration": None if self.ml_calibration is None else self.ml_calibration.to_dict()}
+        data = {"rule_weights": self.weights.to_dict(), "bands": self.bands.to_dict(), "ml_calibration": None if self.ml_calibration is None else self.ml_calibration.to_dict()}
+        if self.ml_domain_shift is not None:
+            data["ml_domain_shift"] = self.ml_domain_shift.to_dict()
+        return data
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "HybridProfile":
-        if not isinstance(data, Mapping) or set(data) - {"rule_weights", "bands", "ml_calibration"}:
-            raise HybridConfigError("hồ sơ chỉ có khoá 'rule_weights', 'bands', 'ml_calibration'")
+        if not isinstance(data, Mapping) or set(data) - {"rule_weights", "bands", "ml_calibration", "ml_domain_shift"}:
+            raise HybridConfigError("hồ sơ chỉ có khoá 'rule_weights', 'bands', 'ml_calibration', 'ml_domain_shift'")
         if "bands" not in data:
             raise HybridConfigError("hồ sơ thiếu khoá bắt buộc 'bands'")
-        calibration = data.get("ml_calibration")
-        return cls(RuleWeights.from_dict(data.get("rule_weights", {})), ActionBands.from_dict(data["bands"]), None if calibration is None else MonotonicCalibrator.from_dict(calibration))
+        calibration, shift = data.get("ml_calibration"), data.get("ml_domain_shift")
+        return cls(
+            RuleWeights.from_dict(data.get("rule_weights", {})), ActionBands.from_dict(data["bands"]),
+            None if calibration is None else MonotonicCalibrator.from_dict(calibration), None if shift is None else MlDomainShift.from_dict(shift),
+        )
 
     @classmethod
     def from_file(cls, path: str | Path) -> "HybridProfile":

@@ -197,3 +197,34 @@ def test_profile_rejects_unknown_top_level_keys_and_bad_json(tmp_path):
 def test_a_profile_without_bands_is_rejected():
     with pytest.raises(HybridConfigError):
         HybridProfile.from_dict({"rule_weights": {}})
+
+
+# ------------------------------------------------------------------------------------------------ MR26: độ lệch miền
+
+
+def test_domain_shift_round_trips_and_old_profiles_without_it_still_load():
+    from app.detection.hybrid.calibration import MlDomainShift
+
+    shift = MlDomainShift(1.78, 0.0, 0.99, "corpus_mr24", (1.61, 1.97), 1020, 0.59)
+    profile = HybridProfile(RuleWeights(), ActionBands(32, 58, 70), MonotonicCalibrator((0.0, 5.0), (0.0, 1.0)), shift)
+    assert HybridProfile.from_dict(json.loads(json.dumps(profile.to_dict()))) == profile
+    old = {k: v for k, v in profile.to_dict().items() if k != "ml_domain_shift"}
+    assert HybridProfile.from_dict(old).ml_domain_shift is None
+
+
+def test_domain_shift_never_makes_the_model_more_sensitive_than_on_rba():
+    from app.detection.hybrid.calibration import MlDomainShift
+
+    with pytest.raises(HybridConfigError, match="≥ 0"):
+        MlDomainShift(success=-0.5)
+    with pytest.raises(HybridConfigError, match="≥ 0"):
+        MlDomainShift(success=float("nan"))
+
+
+def test_ml_probability_applies_the_shift_of_the_login_outcome():
+    from app.detection.hybrid.calibration import MlDomainShift
+
+    profile = HybridProfile(RuleWeights(), ActionBands(32, 58, 70), MonotonicCalibrator((0.0, 5.0), (0.0, 1.0)), MlDomainShift(success=2.0, failure=0.5))
+    assert profile.ml_probability(3.0, success=True) == pytest.approx(0.2)
+    assert profile.ml_probability(3.0, success=False) == pytest.approx(0.5)
+    assert HybridProfile(RuleWeights(), ActionBands(32, 58, 70)).ml_probability(3.0, success=True) is None

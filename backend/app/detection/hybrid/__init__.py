@@ -4,7 +4,7 @@
     from app.detection.hybrid import ActionBands, HybridProfile, RuleWeights, combine_risk
 
     profile = HybridProfile.from_file("app/detection/hybrid/profiles/rba_calibrated.json")
-    ml_probability = None if profile.ml_calibration is None else profile.ml_calibration.probability(raw_ml_score)
+    ml_probability = profile.ml_probability(raw_ml_score, success=True)  # None nếu hồ sơ không có thành phần ML
     result = combine_risk(ml_probability=ml_probability, hits=rule_engine_evaluation.hits, weights=profile.weights, bands=profile.bands)
     print(result.score, result.action, [c.source for c in result.contributions[:3]])
 
@@ -18,6 +18,7 @@ from app.detection.hybrid.calibration import (
     ActionBands,
     HybridConfigError,
     HybridProfile,
+    MlDomainShift,
     MonotonicCalibrator,
     RuleWeightEntry,
     RuleWeights,
@@ -27,7 +28,7 @@ from app.detection.hybrid.calibration import (
 from app.detection.hybrid.combine import GEO_LABEL, REPUTATION_CATEGORY, Contribution, RiskResult, combine_risk, noisy_or
 
 __all__ = [
-    "ACTIONS", "ActionBands", "Contribution", "GEO_LABEL", "HybridConfigError", "HybridProfile", "MonotonicCalibrator",
+    "ACTIONS", "ActionBands", "Contribution", "GEO_LABEL", "HybridConfigError", "HybridProfile", "MlDomainShift", "MonotonicCalibrator",
     "REPUTATION_CATEGORY", "RiskResult", "RuleWeightEntry", "RuleWeights", "combine_risk", "geo_cap", "geo_probability",
     "noisy_or",
 ]

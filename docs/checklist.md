@@ -520,7 +520,7 @@ Các mục dưới đây đổi mô hình hoặc quy tắc nên cần đồng ý
     SQLite + fakeredis riêng mỗi biến thể), ghi bằng chứng thô (luật, xác suất hai mô hình) để MR25/26 tính lại không cần chạy
     lại (`python -m ml.corpus.run`, ~3 phút cho 1.500 biến thể)
   - **Số đo nền** (cấu hình sau MR23): lần thử hợp lệ bị cảnh báo **31,4% / 33,5%** (hiệu chỉnh / đánh giá); AUC `hybrid_cp2`
-    **0,23** (ngược chiều — mạng Việt Nam cực hiếm trong RBA), `ml_geo` 0,93, điểm cuối 0,65. Tỉ lệ phát hiện tấn công (đa số
+    **0,23** (nghịch lý Simpson, đính chính ở MR26: tách thành công/thất bại thì 0,88/0,94), `ml_geo` 0,93, điểm cuối 0,65. Tỉ lệ phát hiện tấn công (đa số
     100%, kể cả "mô phỏng tinh vi") chưa có ý nghĩa khi nền báo nhầm cao như vậy — việc của MR25–MR26
   - Xong khi: ≥ 30 biến thể mỗi họ; data card riêng ghi rõ dữ liệu tự sinh và giới hạn
 - [x] **MR25 [Lõi, M] Hiệu chỉnh lại trọng số luật và mức tối thiểu** (tuần 2) — chi tiết và số đo:
@@ -541,13 +541,25 @@ Các mục dưới đây đổi mô hình hoặc quy tắc nên cần đồng ý
     lệ bị xác thực thêm/khoá 29 → 44/61 lần thử (trọng số datacenter cộng lên nền 0,45–0,67 của `hybrid_cp2`) — đo lại sau
     MR26. Ứng viên MR27–MR30: phân biệt "quên mật khẩu" bằng máy/vị trí quen (kiểu smart lockout)
   - Xong khi: báo nhầm trên bộ đánh giá ≤ 1% đăng nhập hợp lệ; bảng trước/sau cho từng luật
-- [ ] **MR26 [Lõi, M] Hiệu chỉnh cho người dùng Việt Nam + sức khoẻ mô hình có ý nghĩa** (tuần 3)
-  - [ ] Hiệu chỉnh lại ánh xạ điểm → xác suất của `hybrid_cp2` trên lưu lượng hợp lệ kiểu Việt Nam (không train lại, số đo trên
-    RBA giữ nguyên); ngưỡng theo báo nhầm mục tiêu
-  - [ ] PSI so với cửa sổ đầu của chính hệ thống (cùng nguồn); tách riêng chỉ số "khoảng cách RBA → hệ thống" có chú thích
+- [x] **MR26 [Lõi, M] Hiệu chỉnh cho người dùng Việt Nam + sức khoẻ mô hình có ý nghĩa** (tuần 3) — chi tiết và số đo:
+  [`vn-recalibration.md`](vn-recalibration.md)
+  - [x] Chẩn đoán: "AUC 0,23" của MR24 là nghịch lý Simpson (tách thành công/thất bại: 0,88/0,94); lỗi thật là lệch miền của lần
+    THÀNH CÔNG — người dùng hợp lệ Việt Nam cao hơn RBA ~1,6–1,9 đơn vị log10 ở mọi phân vị. Sửa bằng độ lệch miền
+    `MlDomainShift` (không train lại, ánh xạ RBA giữ nguyên): Δ = Q99 Việt Nam − Q99 RBA = **1,78** (KTC 1,61–1,97), chỉ dùng lưu
+    lượng hợp lệ; Δ thất bại = 0. Phương án fit thẳng trên nhãn MR24 bị loại (ATO trên RBA 31,6% → 0%)
+  - [x] PSI cửa sổ đầu so với gần nhất của chính hệ thống (đặc trưng + điểm mô hình); "khoảng cách RBA → hệ thống" tách riêng
+    kèm Δ đang dùng và Δ ước lượng từ log thật (DB dev: 1,93)
+  - [x] Đính chính MR25: tỉ lệ quy đổi π = 8,40% (không phải 6,32% — sai khung dữ liệu); 10 trọng số bị trần không đổi
+  - **Kết quả** (bộ đánh giá): hợp lệ bị cảnh báo 33,5% → **19,3%**, bị OTP/khoá 6,0% → **1,7%**, riêng `hybrid_cp2` 24% →
+    0,15%; phát hiện 95,1% → 94,7%. RBA: số MR11 tái tạo đúng, ATO không đổi. `benign_control` không bị báo (sau khi sửa hai lỗi
+    của chính kịch bản — lịch sử thiếu sổ sách, "thói quen" dồn 10 lần trong 10 giờ); kịch bản "theo thói quen" hết bị báo
+  - ⚠️ Còn lại 19,3% chủ yếu là cảnh báo (không cản) của `ml_geo` ở các họ khác thường nhưng hợp lệ — phương án hạ `ml_geo` đã
+    đo (7,9% báo nhầm nhưng mất 100% "mô phỏng tinh vi"), chờ quyết định ở CP5
   - Xong khi: kịch bản đối chứng IP Việt Nam (MR13 `benign_control`) không bị báo; số đo ATO trên RBA không đổi; trang Model
     Health hiện số đọc được
-- [ ] **CP5 — sau MR26**: số hành vi vững, báo nhầm theo từng luật, độ trễ
+- [ ] **CP5 — sau MR26** (đã báo, chờ duyệt — [`vn-recalibration.md`](vn-recalibration.md) mục 6): hành vi vững 10 → **18**/25;
+  báo nhầm theo từng luật (chỉ `brute_force` 25, `success_after_failures` 20 lần thử hợp lệ tự ép hành động; VPN/datacenter khớp
+  nhưng một mình không cảnh báo); độ trễ trung vị 83–104 ms (CP4: 103–120 ms)
 
 ## Giai đoạn I — Mở rộng hành vi (tuần 3 – tuần 4)
 

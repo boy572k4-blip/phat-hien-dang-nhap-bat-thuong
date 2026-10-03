@@ -10,6 +10,14 @@ CỦA CHÍNH NÓ (mỗi khoảng ~cùng số dòng tham chiếu), rồi so tỉ 
 `Σ (tỉ_lệ_hiện_tại − tỉ_lệ_tham_chiếu) × ln(tỉ_lệ_hiện_tại / tỉ_lệ_tham_chiếu)`. Ngưỡng kinh nghiệm phổ biến trong tài
 liệu risk-scoring: < 0,1 ổn định, 0,1–0,25 trôi vừa (theo dõi), ≥ 0,25 trôi đáng kể (nên xem lại/hiệu chỉnh lại mô hình).
 
+MR26 — HAI phép so khác nhau, đừng lẫn:
+  - **Trôi của chính hệ thống** (`system_windows`): cửa sổ ĐẦU của log thật (tham chiếu) so với cửa sổ GẦN NHẤT — cùng nguồn,
+    cùng cách tính, nên PSI lớn nghĩa là lưu lượng ĐANG THAY ĐỔI (người dùng mới, mạng mới, đợt tấn công). Đây là chỉ số
+    theo dõi sức khoẻ.
+  - **Khoảng cách RBA → hệ thống** (`reference_frame` so với log thật): luôn lớn (khác quốc gia, nhà mạng, quy mô dữ liệu —
+    đặc trưng độ hiếm toàn cục tính theo số lượt của chính hệ thống). Không phải "trôi"; nó giải thích vì sao cần độ lệch
+    miền `MlDomainShift` (MR26). Trước MR26 trang sức khoẻ chỉ hiện số này nên mọi đặc trưng luôn "trôi đáng kể".
+
 ⚠️ PSI cần đủ dòng ở CẢ HAI phía để có nghĩa — với vài chục dòng (quy mô demo hiện tại), số PSI dao động rất mạnh chỉ vì
 may rủi lấy mẫu, KHÔNG được đọc như trôi thật; `psi_report` tự đánh dấu `low_confidence` khi `n_current` dưới
 `MIN_CURRENT_ROWS` để không báo động giả."""
@@ -93,6 +101,46 @@ def reference_frame() -> pd.DataFrame:
     return df[(df["partition"] == "train") & ~df["in_warmup"]]
 
 
+@dataclass
+class Window:
+    """Một cửa sổ log thật: đặc trưng của từng lần thử (đúng đường tính của luồng thật) và khoảng thời gian."""
+
+    frame: pd.DataFrame
+    start: datetime | None
+    end: datetime | None
+
+
+def _features_of(db, events) -> pd.DataFrame:
+    from app.detection.rba_live_features import GlobalCountsCache, compute_rba_features, event_record_for
+
+    cache = GlobalCountsCache(ttl_seconds=3600.0)  # bộ đếm toàn cục đúng THỜI ĐIỂM sự kiện (chỉ đếm lượt trước mốc cắt)
+    rows = [f for f in (compute_rba_features(db, event_record_for(e), cache=cache) for e in events) if f is not None]
+    return pd.DataFrame(rows, columns=list(FEATURE_NAMES)) if rows else pd.DataFrame(columns=list(FEATURE_NAMES))
+
+
+def system_windows(db, limit: int) -> tuple[Window, Window]:
+    """Cửa sổ ĐẦU (tham chiếu) và GẦN NHẤT (hiện tại) của log thật (`is_synthetic=False`), mỗi cửa sổ tối đa `limit` lần thử.
+    Chưa đủ 2×`limit` lần thử thì chia đôi theo thời gian (hai nửa không chồng nhau)."""
+    from sqlalchemy import select
+
+    from app.models import LoginEvent
+
+    ids = list(db.execute(select(LoginEvent.id).where(LoginEvent.is_synthetic.is_(False)).order_by(LoginEvent.created_at.asc(), LoginEvent.id.asc())).scalars())
+    if len(ids) >= 2 * limit:
+        first, last = ids[:limit], ids[-limit:]
+    else:
+        half = len(ids) // 2
+        first, last = ids[:half], ids[half:]
+
+    def window(chosen: list[int]) -> Window:
+        if not chosen:
+            return Window(pd.DataFrame(columns=list(FEATURE_NAMES)), None, None)
+        events = list(db.execute(select(LoginEvent).where(LoginEvent.id.in_(chosen)).order_by(LoginEvent.created_at.asc(), LoginEvent.id.asc())).scalars())
+        return Window(_features_of(db, events), events[0].created_at, events[-1].created_at)
+
+    return window(first), window(last)
+
+
 def current_frame(days: int | None = None, db=None, limit: int | None = None) -> pd.DataFrame:
     """Đặc trưng RBA tính từ `login_events` THẬT (`is_synthetic=False`) — mỗi dòng chấm lại bằng CHÍNH pipeline realtime
     (`app/detection/rba_live_features.compute_rba_features`), không phải một bản sao công thức riêng, nên không thể lệch
@@ -112,7 +160,6 @@ def current_frame(days: int | None = None, db=None, limit: int | None = None) ->
     SQLite in-memory của test) mà người gọi đang thao tác — lỗi thật đã gặp khi viết test cho MR17."""
     from sqlalchemy import select
 
-    from app.detection.rba_live_features import GlobalCountsCache, compute_rba_features, event_record_for
     from app.models import LoginEvent
 
     owns_session = db is None
@@ -132,13 +179,7 @@ def current_frame(days: int | None = None, db=None, limit: int | None = None) ->
         events = list(db.execute(stmt).scalars())
         if limit is not None:
             events.reverse()
-        cache = GlobalCountsCache(ttl_seconds=3600.0)  # một lượt tính toàn bộ log: không cần làm mới cache giữa chừng
-        rows = []
-        for event in events:
-            features = compute_rba_features(db, event_record_for(event), cache=cache)
-            if features is not None:
-                rows.append(features)
-        return pd.DataFrame(rows, columns=list(FEATURE_NAMES)) if rows else pd.DataFrame(columns=list(FEATURE_NAMES))
+        return _features_of(db, events)
     finally:
         if owns_session:
             db.close()

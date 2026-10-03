@@ -5,11 +5,14 @@ một lần đăng nhập thành công thật (baseline giờ, thiết bị/vị
 `pipeline._run_detection_pipeline_sync`. Mô hình và tình báo nạp MỘT lần mỗi tiến trình con.
 
 Mỗi lần thử ghi: hành động, điểm, luật đã khớp (kèm shadow), xác suất `hybrid_cp2` và `ml_geo`, luật đã ép hành động — đủ để
-MR25/MR26 tính lại điểm với trọng số/ngưỡng khác mà không chạy lại pipeline.
+MR25/MR26 tính lại điểm với trọng số/ngưỡng khác mà không chạy lại pipeline. `--with-model-inputs` (MR26) ghi thêm điểm THÔ của
+`hybrid_cp2` (trước ánh xạ điểm -> xác suất), xác suất đuôi từng thành phần và 50 đặc trưng.
 
     cd backend
     venv\\Scripts\\python.exe -m ml.corpus.run --split both --workers 6
-Kết quả: ml/artifacts/corpus/{calibration,evaluation}.jsonl + summary.json (không commit — tái tạo được từ seed)."""
+    venv\\Scripts\\python.exe -m ml.corpus.run --split both --with-model-inputs --out-dir ml/artifacts/corpus/mr26
+Kết quả: ml/artifacts/corpus/{calibration,evaluation}.jsonl + summary.json (không commit — tái tạo được từ seed). Hành động ghi
+lại là của cấu hình lúc chạy: số "trước" của MR25 dựa trên lần chạy với cấu hình MR24, nên lần chạy sau ghi ra thư mục khác."""
 
 from __future__ import annotations
 
@@ -29,7 +32,24 @@ _capture: list = []
 _pools = None
 
 
-def _init_worker() -> None:
+def _model_inputs(engine, features) -> dict:
+    """Điểm thô `hybrid_cp2` (−log10 xác suất đuôi nhỏ nhất), xác suất đuôi từng thành phần, đặc trưng (NaN -> None)."""
+    import math
+
+    import pandas as pd
+
+    if features is None or engine.scorer is None:
+        return {"ml_raw": None, "ml_tails": None, "features": None}
+    frame = pd.DataFrame([features])
+    tails = engine.scorer._tails(frame)[0]
+    return {
+        "ml_raw": round(float(-math.log10(max(min(tails), 1e-300))), 5),
+        "ml_tails": {c.name: round(float(t), 6) for c, t in zip(engine.scorer.components, tails)},
+        "features": {k: (None if v is None or (isinstance(v, float) and math.isnan(v)) else round(float(v), 5)) for k, v in features.items()},
+    }
+
+
+def _init_worker(with_model_inputs: bool = False) -> None:
     """Một lần mỗi tiến trình: nạp mô hình hybrid, tình báo, kho IP; bọc HybridEngine.evaluate để ghi bằng chứng."""
     global _pools
     from sqlalchemy import create_engine
@@ -64,6 +84,7 @@ def _init_worker() -> None:
             "ml_geo": None if result.ml_geo_probability is None else round(result.ml_geo_probability, 5),
             "hits": [[h.rule_id, bool(h.is_shadow)] for h in hits],
             "forced_by": result.overridden_by,
+            **(_model_inputs(self, features) if with_model_inputs else {}),
         })
         return result
 
@@ -184,25 +205,28 @@ def main() -> None:
     parser.add_argument("--per-family", type=int, default=VARIANTS_PER_FAMILY)
     parser.add_argument("--workers", type=int, default=max(1, mp.cpu_count() - 2))
     parser.add_argument("--families", nargs="*", default=None)
+    parser.add_argument("--with-model-inputs", action="store_true", help="ghi thêm điểm thô, xác suất đuôi, đặc trưng của hybrid_cp2 (MR26)")
+    parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
     args = parser.parse_args()
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
     families = tuple(args.families) if args.families else tuple(FAMILIES)
     splits = ("calibration", "evaluation") if args.split == "both" else (args.split,)
     summary = {}
     for split in splits:
         jobs = [(family, SPLIT_SEEDS[split][i]) for family in families for i in range(args.per_family)]
         started = time.perf_counter()
-        with mp.get_context("spawn").Pool(args.workers, initializer=_init_worker) as pool:
+        with mp.get_context("spawn").Pool(args.workers, initializer=_init_worker, initargs=(args.with_model_inputs,)) as pool:
             records = pool.map(_run_variant, jobs, chunksize=4)
-        with (OUT_DIR / f"{split}.jsonl").open("w", encoding="utf-8") as f:
+        with (out_dir / f"{split}.jsonl").open("w", encoding="utf-8") as f:
             for r in records:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
         summary[split] = {"variants": len(records), "attempts": sum(len(r["steps"]) for r in records),
                           "seconds": round(time.perf_counter() - started, 1), "families": summarize(records)}
         print(f"{split}: {len(records)} biến thể, {summary[split]['attempts']} lần thử, {summary[split]['seconds']} s")
     summary["generated_at"] = datetime.now(timezone.utc).isoformat()
-    (OUT_DIR / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
+    (out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps({s: summary[s]["families"] for s in splits}, ensure_ascii=False, indent=1))
 
 

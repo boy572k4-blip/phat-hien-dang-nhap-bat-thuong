@@ -175,18 +175,31 @@ def _create_user(session_factory, username: str):
         db.close()
 
 
-def _seed_history(session_factory, user_id: int, *, ip: str, country: str, when: datetime, count: int = 5) -> None:
-    from app.models import LoginEvent
+def _seed_history(session_factory, user_id: int, *, ip: str, country: str, when: datetime, count: int = 5, step: timedelta = timedelta(hours=1)) -> None:
+    """Lịch sử quen thuộc, ghi như một lần đăng nhập THÀNH CÔNG thật đi qua pipeline: GeoIP/ASN, dấu vân tay thiết bị và sổ
+    sách (giờ quen, thiết bị/vị trí quen). MR26: bản cũ chỉ ghi IP/UA thô (thiếu sót đã ghi ở MR18, sửa ở bộ chạy kịch bản
+    MR22 nhưng chưa sửa ở đây) — tầng 3 thấy "thiết bị mới + vị trí mới" nên đối chứng âm `benign_control` bị báo nhầm."""
+    from app.detection.baseline import record_known_device_if_new, record_known_location_if_new, update_baseline_after_successful_login
+    from app.detection.geoip import lookup_asn, lookup_ip
+    from app.models import LoginEvent, User
+    from app.utils.device import compute_device_fingerprint
 
     db = session_factory()
     try:
+        user = db.get(User, user_id)
+        geo, asn = lookup_ip(ip), lookup_asn(ip)
         for i in range(count):
-            db.add(
-                LoginEvent(
-                    user_id=user_id, attempted_username=f"user{user_id}", success=True, ip_address=ip, country=country,
-                    user_agent=CHROME_UA, is_synthetic=True, created_at=when + timedelta(hours=i),
-                )
+            event = LoginEvent(
+                user_id=user_id, attempted_username=user.username, success=True, ip_address=ip, user_agent=CHROME_UA,
+                device_fingerprint=compute_device_fingerprint(CHROME_UA), country=geo.country if geo else country,
+                city=geo.city if geo else None, latitude=geo.latitude if geo else None, longitude=geo.longitude if geo else None,
+                asn=asn.asn if asn else None, is_synthetic=True, created_at=when + i * step,
             )
+            db.add(event)
+            db.flush()
+            update_baseline_after_successful_login(db, user, event)
+            record_known_device_if_new(db, user, event.device_fingerprint, CHROME_UA)
+            record_known_location_if_new(db, user, event.country, event.city)
         db.commit()
     finally:
         db.close()
@@ -279,11 +292,15 @@ def _scenario_reputation_burst() -> ScenarioResult:
 
 
 def _scenario_benign_control() -> ScenarioResult:
-    """Đối chứng ÂM: lịch sử quen thuộc + 1 lần đăng nhập bình thường (cùng IP/nước/thiết bị) — KHÔNG được có alert."""
+    """Đối chứng ÂM: lịch sử quen thuộc + 1 lần đăng nhập bình thường (cùng IP/nước/thiết bị/giờ) — KHÔNG được có alert.
+
+    MR26: thói quen là mỗi ngày một lần cùng giờ, lần gần nhất hôm qua. Bản cũ dồn 10 lần vào 10 giờ liên tiếp (19h–4h giờ
+    Việt Nam) rồi im 10 ngày — mô hình địa lý-thời gian báo "khoảng cách lần trước ↑, lệch giờ ↑" là ĐÚNG với lịch sử đó,
+    kịch bản không còn là "khớp thói quen" như tên gọi."""
     sf = _fresh_session_factory()
     _wire(sf)
     user_id = _create_user(sf, "alice_benign")
-    _seed_history(sf, user_id, ip=HANOI_IP, country="VN", when=BASE - timedelta(days=10), count=10)
+    _seed_history(sf, user_id, ip=HANOI_IP, country="VN", when=BASE - timedelta(days=10), count=10, step=timedelta(days=1))
     _run(username="alice_benign", user_id=user_id, success=True, ip=HANOI_IP, ts=BASE)
     raw, families = _collect(sf)
     return ScenarioResult("benign_control", "Đăng nhập bình thường khớp lịch sử quen thuộc (đối chứng âm)", None, raw, len(families), families)

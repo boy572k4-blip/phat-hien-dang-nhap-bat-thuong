@@ -77,8 +77,9 @@ ngay lập tức, không cần reload trang.
 > Từ giai đoạn mở rộng AI (MR14-17), khu quản trị còn có: **Campaigns** (chiến
 > dịch tấn công gom nhiều tài khoản/alert theo hạ tầng chung), **Rules** (bật/tắt
 > và chỉnh tham số 19 luật rule engine v2 mà không cần sửa code, xem
-> [`docs/dashboard-v2.md`](dashboard-v2.md)), **Model Health** (drift PSI của
-> mô hình so với dữ liệu train), và trang hồ sơ rủi ro theo từng user.
+> [`docs/dashboard-v2.md`](dashboard-v2.md)), **Model Health** (trôi PSI của chính
+> hệ thống: cửa sổ đầu so với gần nhất; khoảng cách so với dữ liệu train RBA và độ lệch
+> miền — MR26), và trang hồ sơ rủi ro theo từng user.
 
 ## Bước 5 — (Tuỳ chọn) Sinh lại dữ liệu mẫu
 

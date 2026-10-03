@@ -33,10 +33,12 @@ _FALLBACK_PROFILE = HybridProfile(RuleWeights(), ActionBands(alert_at=40, step_u
 @dataclass(frozen=True)
 class MlAssessment:
     """Kết quả MỘT lần chạy mô hình cho một lần thử: xác suất đã hiệu chỉnh và tên thành phần `HybridMinTail` dẫn đầu.
-    `None` ở từng trường nghĩa là không có bằng chứng đó (thiếu đặc trưng, mô hình chưa nạp, scorer không hỗ trợ, lỗi)."""
+    `None` ở từng trường nghĩa là không có bằng chứng đó (thiếu đặc trưng, mô hình chưa nạp, scorer không hỗ trợ, lỗi).
+    `raw`: điểm thô (−log10 xác suất đuôi so với RBA) TRƯỚC khi trừ độ lệch miền (MR26) — để theo dõi sức khoẻ mô hình."""
 
     probability: float | None
     component: str | None
+    raw: float | None = None
 
 
 NO_ML = MlAssessment(probability=None, component=None)
@@ -103,7 +105,8 @@ class HybridEngine:
                 raw, component = raw_scores[0], str(names[0])
             else:
                 raw, component = self.scorer(frame)[0], None
-            return MlAssessment(probability=float(self.profile.ml_calibration.probability(raw)), component=component)
+            success = features.get("cur_success") == 1.0
+            return MlAssessment(probability=self.profile.ml_probability(float(raw), success), component=component, raw=float(raw))
         except Exception:  # noqa: BLE001
             logger.exception("lỗi khi chấm điểm ML — bỏ qua thành phần ML cho lần thử này")
             return NO_ML

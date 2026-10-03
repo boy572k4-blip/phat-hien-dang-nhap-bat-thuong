@@ -1,7 +1,7 @@
 """MR25 — hiệu chỉnh lại trọng số luật trên bộ dữ liệu hiệu chỉnh (MR24), báo số trên bộ đánh giá.
 
 Trọng số của luật là P(tấn công | luật khớp) dùng trong noisy-OR (MR11). Trên RBA, MR11 đo bằng ĐỘ CHÍNH XÁC của luật — ở đó tỉ
-lệ tấn công là của chính dữ liệu (~6,3% lần thử ở bộ val, có trọng số). Bộ MR24 có tỉ lệ tấn công do NHÓM chọn (~70% lần thử),
+lệ tấn công là của chính dữ liệu (8,4% lần thử ở bộ val, có trọng số). Bộ MR24 có tỉ lệ tấn công do NHÓM chọn (~70% lần thử),
 nên độ chính xác thô sẽ thổi phồng trọng số. Thay vào đó đo TỈ SỐ KHẢ NĂNG
     LR = P(luật khớp | lần thử độc hại) / P(luật khớp | lần thử hợp lệ)        (cộng 0,5 vào mỗi ô — tránh chia cho 0)
 rồi quy về CÙNG thang với trọng số RBA:  w = π·LR / (π·LR + 1 − π),  π = `RBA_ATTACK_PRIOR`.
@@ -42,7 +42,9 @@ from app.detection.hybrid.combine import REPUTATION_CATEGORY
 
 CORPUS_DIR = Path(__file__).resolve().parents[1] / "artifacts" / "corpus"
 PROFILE_PATH = Path(__file__).resolve().parents[2] / "app" / "detection" / "hybrid" / "profiles" / "rba_calibrated.json"
-RBA_ATTACK_PRIOR = 0.0632  # tỉ lệ lần thử từ IP tấn công (có trọng số) ở bộ val của RBA — tập MR11 dùng để đo trọng số
+# Tỉ lệ lần thử từ IP tấn công (trọng số dân số) ở val RBA, bỏ warm-up — ĐÚNG khung `hybrid_calibrate.calibrate_rule_weights` (MR11)
+# đo độ chính xác. Bản đầu của MR25 ghi 0,0632 (sai khung dữ liệu); sửa ở MR26 — trọng số không bị trần đổi theo.
+RBA_ATTACK_PRIOR = 0.0840
 RBA_VALID = ("brute_force", "credential_stuffing", "password_spray_slow", "dormant_account_login", "rare_network_login")
 CONTEXT_ONLY = ("datacenter_ip", "vpn_ip")
 MR21_MIN_ACTIONS = {"brute_force": "alert", "credential_stuffing": "alert", "impossible_travel": "alert", "success_after_failures": "step_up", "blocklist_hit": "lock"}
@@ -242,7 +244,7 @@ def main() -> None:
         print(f"[{label}] hợp lệ bị cảnh báo: mọi nguồn {e['all_sources']['legit_alert_rate']:.1%} | chỉ luật {e['rules_only']['legit_alert_rate']:.1%}"
               f"  (OTP/khoá: {e['all_sources']['legit_step_up_or_lock_rate']:.1%} | {e['rules_only']['legit_step_up_or_lock_rate']:.1%})")
     if args.write:
-        updated = HybridProfile(with_sources(weights_after), profile.bands, profile.ml_calibration)
+        updated = dataclasses.replace(profile, weights=with_sources(weights_after))  # giữ nguyên ngưỡng, hiệu chỉnh ML, độ lệch miền
         PROFILE_PATH.write_text(json.dumps(updated.to_dict(), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
         print(f"đã ghi {len(new_entries)} trọng số vào {PROFILE_PATH}")
 

@@ -41,3 +41,7 @@ def test_returns_registered_versions_and_a_drift_summary(client, db_session):
     assert body["drift_low_confidence"] is True
     assert body["drift_n_current"] == 0
     assert isinstance(body["drift_top_features"], list) and len(body["drift_top_features"]) > 0
+    # MR26: trôi = cửa sổ đầu so với gần nhất của CHÍNH hệ thống; khoảng cách RBA tách riêng, có số tham chiếu RBA.
+    assert body["drift_n_reference"] == 0 and body["drift_reference_from"] is None
+    assert body["rba_gap_n_reference"] > 0 and len(body["rba_gap_top_features"]) > 0
+    assert "score_drift" in body and "domain_shift" in body

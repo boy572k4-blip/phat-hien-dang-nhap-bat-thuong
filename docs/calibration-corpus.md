@@ -39,8 +39,10 @@ venv\Scripts\python.exe -m ml.corpus.run --split both --workers 6   # ~3 phút -
 
 - **Báo nhầm rất cao** trên lưu lượng hợp lệ khó: VPN 100% lần thử, đi công tác 56–65%, thiết bị mới 51–57%, gõ sai 33–41%,
   văn phòng NAT 32%, cả dùng theo thói quen 14–18%. Ba phần tư số báo nhầm do `hybrid_cp2` một mình vượt ngưỡng.
-- **`hybrid_cp2` ngược chiều trên lưu lượng kiểu Việt Nam**: trung vị 0,29 cho lần thử hợp lệ, 0,06 cho lần thử tấn công — mạng
-  Việt Nam cực hiếm trong dữ liệu huấn luyện RBA (lệch phân phối đã ghi từ MR12). Phần phát hiện tấn công hiện đến chủ yếu từ
+- **`hybrid_cp2` trông như ngược chiều trên lưu lượng kiểu Việt Nam**: trung vị 0,29 cho lần thử hợp lệ, 0,06 cho lần thử tấn
+  công. ⚠️ Đính chính ở MR26 ([`vn-recalibration.md`](vn-recalibration.md)): AUC 0,23 là **nghịch lý Simpson** — tách theo kết
+  quả đăng nhập thì AUC 0,88 (thành công) và 0,94 (thất bại). Lần thất bại (đa số là tấn công) chỉ được 1/3 thành phần chấm nên
+  điểm thấp; lần thành công (đa số hợp lệ) được cả 3 thành phần chấm VÀ bị lệch miền (mạng Việt Nam hiếm trong RBA). Phần phát hiện tấn công hiện đến chủ yếu từ
   `ml_geo` (~85% số lần thử tấn công bị cảnh báo).
 - Vì nền báo nhầm cao, tỉ lệ "phát hiện" của các họ tấn công (đa số 100%) **chưa có ý nghĩa** — kể cả "mô phỏng tinh vi", vốn
   thiết kế để khó, cũng 100%. Phải hạ báo nhầm trước (MR25–MR26), rồi đo lại trên bộ đánh giá.

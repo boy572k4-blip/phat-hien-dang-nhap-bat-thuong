@@ -17,13 +17,15 @@ venv\Scripts\python.exe -m ml.corpus.calibrate_rules --write  # và ghi trọng 
   `dormant_account_login`, `rare_network_login`). Đo lại các luật RBA không đo được (mặc định 5%) hoặc ra 0% vì mẫu quá nhỏ.
 - **Không dùng độ chính xác thô** trên bộ MR24: tỉ lệ tấn công ở đó (~70% lần thử) do nhóm chọn, sẽ thổi phồng trọng số. Đo
   **tỉ số khả năng** LR = P(khớp | độc hại) / P(khớp | hợp lệ) (cộng 0,5 mỗi ô), rồi đổi về **cùng thang với trọng số RBA**:
-  w = π·LR / (π·LR + 1 − π), π = 6,32% (tỉ lệ lần thử tấn công, có trọng số, ở bộ val của RBA). Luật khớp như nhau ở hai phía
-  thì w = π đúng bằng "không mang thông tin".
+  w = π·LR / (π·LR + 1 − π), π = 8,40% (tỉ lệ lần thử từ IP tấn công, trọng số dân số, val RBA bỏ warm-up — đúng khung MR11
+  đo độ chính xác). Luật khớp như nhau ở hai phía thì w = π đúng bằng "không mang thông tin". ⚠️ Bản đầu của MR25 dùng
+  π = 6,32% (sai khung dữ liệu), sửa ở MR26: 10 trọng số bị trần không đổi, `success_after_failures` 0,041 → 0,055,
+  `vpn_ip` 0,203 → 0,257; bảng và số dưới đây là bản đã sửa.
 - Khoảng tin cậy 95%: bootstrap 500 lần theo **biến thể** (các lần thử trong một biến thể không độc lập).
 - Luật khớp < 20 lần trên bộ hiệu chỉnh giữ trọng số cũ (`multi_context_simultaneous`, `blocklist_hit`).
 - **Hai trần**, đặt theo ngưỡng hành động (cùng kiểu trần 0,382 của `ml_geo`, MR22), không phải số chọn tay:
   - mọi trọng số đo trên bộ tự dựng ≤ **0,57** (ngay dưới `step_up`): một mình luật chỉ đủ **cảnh báo**. 10 luật không khớp lần
-    thử hợp lệ nào nên LR chỉ bị chặn bởi cỡ mẫu (~1.300 lần thử hợp lệ) và ra 0,86–0,98 — con số đó nói "luật mạnh trên kịch
+    thử hợp lệ nào nên LR chỉ bị chặn bởi cỡ mẫu (~1.300 lần thử hợp lệ) và ra 0,75–0,99 — con số đó nói "luật mạnh trên kịch
     bản nhóm tự dựng", không chứng minh được báo nhầm thật < 1/1.300. Để nguyên thì MỘT luật tự **khoá** người dùng (vd di
     chuyển bất khả thi — VPN bật/tắt là nguồn báo nhầm kinh điển của luật này).
   - `datacenter_ip`, `vpn_ip` ≤ **0,31** (ngay dưới `alert`): một mình loại IP không đủ cảnh báo. Tử số LR ("bao nhiêu phần
@@ -41,21 +43,21 @@ venv\Scripts\python.exe -m ml.corpus.calibrate_rules --write  # và ghi trọng 
 | `brute_force` | 0,101 (rba) | — | 0,00–0,26 | **0,101** rba | 489 / 25 |
 | `credential_stuffing` | 0,346 (rba) | — | 0,30–0,40 | **0,346** rba | 339 / 0 |
 | `password_spray_slow` | 0,102 (rba) | — | 0,08–0,13 | **0,102** rba | 231 / 0 |
-| `distributed_bruteforce` | 0 (rba, n = 2) | 0,867 | 0,79–0,90 | **0,570** trần | 125 / 0 |
-| `username_enumeration` | 0,05 (mặc định) | 0,925 | 0,89–0,95 | **0,570** trần | 243 / 0 |
-| `success_after_failures` | 0 (rba) | 0,041 | 0,02–0,07 | **0,041** | 43 / 20 |
-| `bot_user_agent` | 0,05 (mặc định) | 0,691 | 0,49–0,79 | **0,570** trần | 21 / 0 |
-| `scripted_client` | 0,05 (mặc định) | 0,980 | 0,97–0,98 | **0,570** trần | 1.001 / 0 |
-| `ua_rotation` | 0,05 (mặc định) | 0,859 | 0,80–0,89 | **0,570** trần | 85 / 0 |
-| `regular_rhythm` | 0,05 (mặc định) | 0,812 | 0,74–0,86 | **0,570** trần | 76 / 0 |
-| `impossible_travel` | 0,05 (mặc định) | 0,953 | 0,94–0,96 | **0,570** trần | 395 / 0 |
+| `distributed_bruteforce` | 0 (rba, n = 2) | 0,899 | 0,84–0,93 | **0,570** trần | 125 / 0 |
+| `username_enumeration` | 0,05 (mặc định) | 0,944 | 0,91–0,96 | **0,570** trần | 243 / 0 |
+| `success_after_failures` | 0 (rba) | 0,055 | 0,03–0,09 | **0,055** | 43 / 20 |
+| `bot_user_agent` | 0,05 (mặc định) | 0,752 | 0,57–0,84 | **0,570** trần | 21 / 0 |
+| `scripted_client` | 0,05 (mặc định) | 0,985 | 0,98–0,99 | **0,570** trần | 1.001 / 0 |
+| `ua_rotation` | 0,05 (mặc định) | 0,892 | 0,84–0,92 | **0,570** trần | 85 / 0 |
+| `regular_rhythm` | 0,05 (mặc định) | 0,855 | 0,79–0,89 | **0,570** trần | 76 / 0 |
+| `impossible_travel` | 0,05 (mặc định) | 0,965 | 0,95–0,97 | **0,570** trần | 395 / 0 |
 | `multi_context_simultaneous` | 0 (rba) | — (< 20 lần khớp) | — | **0** rba | 3 / 0 |
-| `country_hop` | 0 (rba) | 0,941 | 0,92–0,95 | **0,570** trần | 300 / 0 |
+| `country_hop` | 0 (rba) | 0,956 | 0,94–0,97 | **0,570** trần | 300 / 0 |
 | `dormant_account_login` | 0,025 (rba) | — | 0,02–0,04 | **0,025** rba | 24 / 0 |
 | `rare_network_login` | 0,026 (rba) | — | 0,00–0,05 | **0,026** rba | 0 / 0 |
-| `tor_exit` | 0,05 (mặc định) | 0,954 | 0,94–0,97 | **0,570** trần | 517 / 0 |
-| `datacenter_ip` | 0,05 (mặc định) | 0,359 | 0,27–0,48 | **0,310** trần IP | 870 / 44 |
-| `vpn_ip` | 0,05 (mặc định) | 0,203 | 0,13–0,31 | **0,203** | 387 / 52 |
+| `tor_exit` | 0,05 (mặc định) | 0,966 | 0,95–0,97 | **0,570** trần | 517 / 0 |
+| `datacenter_ip` | 0,05 (mặc định) | 0,432 | 0,34–0,56 | **0,310** trần IP | 870 / 44 |
+| `vpn_ip` | 0,05 (mặc định) | 0,257 | 0,17–0,38 | **0,257** | 387 / 52 |
 | `blocklist_hit` | 0,05 (mặc định) | — (không có mẫu) | — | **0,05** + `min_action=lock` | 0 / 0 |
 
 Mọi trọng số trong hồ sơ giờ có trường `source`: `rba` / `default` / `corpus_mr24` / `corpus_mr24_capped`.
@@ -82,7 +84,7 @@ với "dò mật khẩu ngắn 5–12 lần"; phân biệt cần thêm ngữ c�
 | Lần thử hợp lệ bị cảnh báo trở lên — **chỉ luật** | 3,4% | **3,4%** (100% là họ "quên mật khẩu"; 9 họ hợp lệ còn lại: **0%**) |
 | … trong đó bị xác thực thêm/khoá — chỉ luật | 1,5% | 1,5% |
 | Lần thử hợp lệ bị cảnh báo trở lên — **mọi nguồn** | 33,5% | 33,5% |
-| … bị xác thực thêm/khoá — mọi nguồn | 4,5% | **5,7%** ⚠️ |
+| … bị xác thực thêm/khoá — mọi nguồn | 4,5% | **6,0%** ⚠️ |
 | Tỉ lệ phát hiện trung bình 15 họ tấn công — chỉ luật | 58,4% | **71,8%** |
 | Tỉ lệ phát hiện trung bình 15 họ tấn công — mọi nguồn | 89,3% | **95,1%** |
 
@@ -91,10 +93,10 @@ Họ tấn công tăng: dò danh sách tài khoản 70% → 100%, bot/công cụ
 
 ⚠️ **Điều kiện "xong" (≤ 1%) CHƯA đạt**:
 - Lớp luật: 3,4%, toàn bộ là ca "quên mật khẩu" ở trên (cố ý: cảnh báo cho quản trị + OTP khi đăng nhập được).
-- Mọi nguồn: 33,5% — gần như toàn bộ do `hybrid_cp2` (AUC 0,23 trên lưu lượng Việt Nam, MR24) → việc của **MR26**.
-- Người dùng VPN hợp lệ bị xác thực thêm/khoá tăng 29 → 44/61 lần thử: trọng số datacenter (0,31) cộng lên nền 0,45–0,67 mà
-  `hybrid_cp2` cho IP VPN. Một mình trọng số này không cảnh báo (họ `vpn_user` chỉ luật: 0%). Đo lại sau MR26; nếu còn thì hạ
-  trần nhóm IP.
+- Mọi nguồn: 33,5% — gần như toàn bộ do `hybrid_cp2` → việc của **MR26** (giải quyết ở [`vn-recalibration.md`](vn-recalibration.md):
+  còn 19,3%, OTP/khoá 1,7%). "AUC 0,23" ghi ở MR24 là nghịch lý Simpson, không phải mô hình ngược chiều — xem tài liệu MR26.
+- Người dùng VPN hợp lệ bị xác thực thêm/khoá tăng 29 → 48/61 lần thử: trọng số datacenter (0,31) cộng lên nền 0,45–0,67 mà
+  `hybrid_cp2` cho IP VPN. Một mình trọng số này không cảnh báo (họ `vpn_user` chỉ luật: 0%). Sau MR26: 1/61.
 
 **20 kịch bản** (cùng bộ chạy CP4): 3 kịch bản hợp lệ không đổi; 4 kịch bản trước đây lọt giờ bị bắt (dò danh sách tài khoản,
 bot UA, Tor, nhảy nhiều quốc gia), nhịp đều như máy bị bắt từ bước 2 (trước: bước 5); datacenter/VPN một mình vẫn `allow` (đúng
@@ -110,7 +112,7 @@ trần); 8 kịch bản tấn công lên `lock` (hai bằng chứng mạnh cùng
 
 ## 6. Hội đồng có thể hỏi
 
-- **"Trọng số 0,57 cho 10 luật — vậy là đặt tay?"** Số đo là cột "LR → w" (0,69–0,98, có KTC). 0,57 là **trần chính sách**
+- **"Trọng số 0,57 cho 10 luật — vậy là đặt tay?"** Số đo là cột "LR → w" (0,75–0,99, có KTC). 0,57 là **trần chính sách**
   suy ra từ ngưỡng `step_up` (58): dữ liệu tự sinh chỉ đủ nói luật mạnh, không đủ để một luật một mình khoá người dùng thật.
   Bỏ trần: báo nhầm không đổi (không luật nào trong 10 luật đó khớp lần thử hợp lệ), chỉ nhiều ca tấn công bị khoá hơn.
 - **"Sao không dùng độ chính xác như MR11?"** Tỉ lệ tấn công trong bộ MR24 do nhóm chọn; LR không phụ thuộc tỉ lệ đó, rồi quy về
@@ -119,4 +121,5 @@ trần); 8 kịch bản tấn công lên `lock` (hai bằng chứng mạnh cùng
   phải OTP. Đã đo phương án bỏ — đánh đổi ở mục 3.
 - **"Sao VPN không bị cảnh báo?"** Trần nhóm IP: một mình VPN/datacenter không đủ (người dùng thật hay dùng VPN công ty); kèm
   tín hiệu khác thì đủ — họ "đăng nhập qua Tor/VPN" bị bắt 100% khi có cả mô hình. Riêng Tor một mình đã đủ cảnh báo (0,57).
-- **"Báo nhầm 33%?"** Đúng, đo thật; nguyên nhân là `hybrid_cp2` học trên RBA (gần như không có mạng Việt Nam) → MR26.
+- **"Báo nhầm 33%?"** Đúng, đo thật ở MR25; nguyên nhân là `hybrid_cp2` học trên RBA (gần như không có mạng Việt Nam) → sau MR26
+  còn 19,3%, phần lớn là cảnh báo (không cản) của mô hình địa lý-thời gian ở các họ "khác thường nhưng hợp lệ".

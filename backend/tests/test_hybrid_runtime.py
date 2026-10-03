@@ -208,3 +208,16 @@ def test_loading_the_real_model_accelerates_its_isolation_forest_without_changin
         finally:
             forest_component.scorer._fast_forest = fast_forest
         assert fast == slow
+
+
+def test_the_domain_shift_is_subtracted_only_for_successful_logins(engine):
+    """MR26: điểm thô trừ độ lệch miền của nhóm theo kết quả đăng nhập rồi mới qua đường hiệu chỉnh; `raw` giữ nguyên điểm gốc."""
+    from app.detection.hybrid import MlDomainShift
+
+    engine.scorer = lambda frame: [3.0] * len(frame)
+    engine.profile = HybridProfile(
+        RuleWeights(), ActionBands(10, 50, 90), MonotonicCalibrator((0.0, 5.0), (0.0, 1.0)), MlDomainShift(success=2.0, failure=0.0),
+    )
+    success, failure = engine.ml_assessment({"cur_success": 1.0}), engine.ml_assessment({"cur_success": 0.0})
+    assert success.probability == pytest.approx(0.2) and success.raw == pytest.approx(3.0)
+    assert failure.probability == pytest.approx(0.6)

@@ -379,16 +379,21 @@ def _json_safe(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _keep_corpus_weights(profile: dict[str, Any]) -> dict[str, Any]:
-    """MR25 thay trọng số các luật RBA không đo được bằng số đo trên bộ MR24 (`ml/corpus/calibrate_rules.py`). Chạy lại MR11
-    không được xoá chúng: giữ mọi mục có `source` bắt đầu bằng "corpus_mr24" của hồ sơ đang có."""
+    """MR25 thay trọng số các luật RBA không đo được bằng số đo trên bộ MR24 (`ml/corpus/calibrate_rules.py`), MR26 thêm độ
+    lệch miền của `hybrid_cp2` (`ml/corpus/calibrate_ml.py`). Chạy lại MR11 không được xoá chúng: giữ mọi trọng số có `source`
+    bắt đầu bằng "corpus_mr24" và khoá `ml_domain_shift` của hồ sơ đang có."""
     if not PROFILE_PATH.is_file():
         return profile
-    current = json.loads(PROFILE_PATH.read_text(encoding="utf-8")).get("rule_weights", {}).get("weights", {})
+    existing = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    current = existing.get("rule_weights", {}).get("weights", {})
     kept = {rule: entry for rule, entry in current.items() if str(entry.get("source", "")).startswith("corpus_mr24")}
     if kept:
         print(f"giữ {len(kept)} trọng số đo trên bộ MR24 (MR25): {', '.join(sorted(kept))}")
     out = json.loads(json.dumps(profile))
     out["rule_weights"]["weights"].update(kept)
+    if existing.get("ml_domain_shift") is not None:
+        out["ml_domain_shift"] = existing["ml_domain_shift"]
+        print("giữ độ lệch miền của hybrid_cp2 (MR26)")
     return out
 
 

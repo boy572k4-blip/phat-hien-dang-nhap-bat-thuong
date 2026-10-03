@@ -1,7 +1,10 @@
 """GET /model-health — checklist MR17 "sức khoẻ model (drift, phiên bản)": danh sách phiên bản đã đăng ký
-(`model_registry`, MR12) + trôi đặc trưng (PSI, `ml/rba/drift.py`, MR12) giữa dữ liệu train RBA và `login_events` THẬT
-hiện tại — MR12 đã tính đây là một phân tích NGOẠI TUYẾN một lần (`python -m ml.rba.drift`); giờ có endpoint để dashboard
-xem trực tiếp.
+(`model_registry`, MR12) + trôi (PSI, `ml/rba/drift.py`).
+
+MR26 — ba nhóm số, đọc được: (1) TRÔI CỦA CHÍNH HỆ THỐNG: cửa sổ đầu của log thật so với cửa sổ gần nhất, theo đặc trưng và
+theo ĐIỂM mô hình (kèm tỉ lệ lần thử mà riêng `hybrid_cp2` đủ cảnh báo); (2) KHOẢNG CÁCH RBA → HỆ THỐNG (train RBA so với
+cửa sổ gần nhất) — luôn lớn, là lý do của độ lệch miền chứ không phải "trôi"; (3) độ lệch miền đang dùng và ước lượng lại
+từ log thật. Trước MR26 trang chỉ có (2) nên mọi đặc trưng luôn "trôi đáng kể".
 
 ⚠️ Tính PSI cần đọc file parquet train RBA (không đổi khi chạy — cache VĨNH VIỄN trong tiến trình, không TTL) VÀ tính
 lại đặc trưng RBA cho `login_events` thật (`is_synthetic=False`) — KHÔNG rẻ như `refresh_blocklist`/`refresh_rule_config`
@@ -22,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_admin
 from app.models import ModelRegistryEntry
-from app.schemas import FeatureDriftOut, ModelHealthOut, ModelVersionOut
+from app.schemas import DomainShiftOut, FeatureDriftOut, ModelHealthOut, ModelVersionOut, ScoreDriftOut
 
 router = APIRouter()
 
@@ -30,6 +33,7 @@ DRIFT_CACHE_TTL_SECONDS = 600.0
 TOP_N_FEATURES = 15
 # Mỗi dòng tốn vài round-trip DB (compute_rba_features) — đo trực tiếp: ~1.500 dòng khiến request treo >30s. Giới hạn
 # ở ĐÂY (endpoint LIVE, admin đang chờ), KHÔNG giới hạn ở CLI script (python -m ml.rba.drift, chạy tay, chờ được).
+# MR26: giới hạn MỖI cửa sổ (đầu và gần nhất) — tối đa 2 × 300 dòng.
 CURRENT_ROWS_LIMIT = 300
 
 _drift_cache: ModelHealthOut | None = None  # chỉ phần drift được cache — versions luôn đọc DB mới (rẻ)
@@ -54,22 +58,72 @@ def _get_reference_frame():
     return _reference_frame_cache
 
 
-def _compute_drift(db: Session) -> tuple[datetime, bool, int, int, list[FeatureDriftOut]]:
+def _features_out(rows) -> list[FeatureDriftOut]:
     import numpy as np
 
-    from ml.rba.drift import current_frame, psi_report
-
-    reference = _get_reference_frame()
-    current = current_frame(db=db, limit=CURRENT_ROWS_LIMIT)
-    rows = psi_report(reference, current)[:TOP_N_FEATURES]
-    top_features = [
+    return [
         FeatureDriftOut(feature=r.feature, psi=None if np.isnan(r.psi) else r.psi, verdict=r.verdict, n_reference=r.n_reference, n_current=r.n_current)
-        for r in rows
+        for r in rows[:TOP_N_FEATURES]
     ]
-    low_confidence = rows[0].low_confidence if rows else True
-    n_reference = rows[0].n_reference if rows else 0
-    n_current = rows[0].n_current if rows else 0
-    return datetime.now(timezone.utc), low_confidence, n_reference, n_current, top_features
+
+
+def _model_view(engine, reference, current) -> tuple[ScoreDriftOut | None, DomainShiftOut | None]:
+    """Trôi điểm `hybrid_cp2` giữa hai cửa sổ và độ lệch miền (đang dùng + ước lượng lại từ trung vị lần thành công)."""
+    import numpy as np
+
+    from ml.rba.drift import MIN_CURRENT_ROWS, population_stability_index, verdict
+    from ml.rba.features import FEATURE_NAMES
+
+    profile = engine.profile
+    if engine.scorer is None or profile.ml_calibration is None:
+        return None, None
+
+    def scored(frame):
+        if len(frame) == 0:
+            return np.array([]), np.array([], dtype=bool)
+        return np.asarray(engine.scorer(frame[list(FEATURE_NAMES)].astype(float)), dtype=float), frame["cur_success"].to_numpy(dtype=float) == 1.0
+
+    def alert_share(raw, success):
+        if len(raw) == 0:
+            return None
+        probabilities = np.array([profile.ml_probability(r, s) for r, s in zip(raw, success)])
+        return float(np.mean(np.round(probabilities * 100) >= profile.bands.alert_at))
+
+    (raw_ref, ok_ref), (raw_cur, ok_cur) = scored(reference), scored(current)
+    psi = population_stability_index(raw_ref, raw_cur) if len(raw_ref) and len(raw_cur) else float("nan")
+    score = ScoreDriftOut(psi=None if np.isnan(psi) else psi, verdict=verdict(psi), ml_alert_share_reference=alert_share(raw_ref, ok_ref), ml_alert_share_current=alert_share(raw_cur, ok_cur))
+
+    shift = profile.ml_domain_shift
+    if shift is None:
+        return score, None
+    live_success = raw_cur[ok_cur]
+    live = None
+    if shift.rba_median_success is not None and len(live_success) >= MIN_CURRENT_ROWS:
+        live = float(np.median(live_success)) - shift.rba_median_success
+    return score, DomainShiftOut(
+        success=shift.success, failure=shift.failure, ci95_success=None if shift.ci95_success is None else list(shift.ci95_success),
+        source=shift.source, live_estimate=live, live_n=int(len(live_success)),
+    )
+
+
+def _compute_drift(db: Session) -> dict:
+    from app.detection import hybrid_runtime
+    from ml.rba.drift import MIN_CURRENT_ROWS, psi_report, system_windows
+
+    reference, current = system_windows(db, CURRENT_ROWS_LIMIT)
+    rows = psi_report(reference.frame, current.frame)
+    rba_reference = _get_reference_frame()
+    score, shift = _model_view(hybrid_runtime.get_engine(), reference.frame, current.frame)
+    return {
+        "drift_computed_at": datetime.now(timezone.utc),
+        "drift_low_confidence": min(len(reference.frame), len(current.frame)) < MIN_CURRENT_ROWS,
+        "drift_n_reference": len(reference.frame), "drift_n_current": len(current.frame),
+        "drift_reference_from": reference.start, "drift_reference_to": reference.end,
+        "drift_current_from": current.start, "drift_current_to": current.end,
+        "drift_top_features": _features_out(rows),
+        "score_drift": score, "domain_shift": shift,
+        "rba_gap_n_reference": len(rba_reference), "rba_gap_top_features": _features_out(psi_report(rba_reference, current.frame)),
+    }
 
 
 @router.get("/model-health", response_model=ModelHealthOut)
@@ -84,14 +138,7 @@ def get_model_health(
 
     now = time.monotonic()
     if refresh or _drift_cache is None or now - _drift_cached_at >= DRIFT_CACHE_TTL_SECONDS:
-        computed_at, low_confidence, n_reference, n_current, top_features = _compute_drift(db)
-        _drift_cache = ModelHealthOut(
-            versions=[], drift_computed_at=computed_at, drift_low_confidence=low_confidence,
-            drift_n_reference=n_reference, drift_n_current=n_current, drift_top_features=top_features,
-        )
+        _drift_cache = ModelHealthOut(versions=[], **_compute_drift(db))
         _drift_cached_at = now
 
-    return ModelHealthOut(
-        versions=versions, drift_computed_at=_drift_cache.drift_computed_at, drift_low_confidence=_drift_cache.drift_low_confidence,
-        drift_n_reference=_drift_cache.drift_n_reference, drift_n_current=_drift_cache.drift_n_current, drift_top_features=_drift_cache.drift_top_features,
-    )
+    return _drift_cache.model_copy(update={"versions": versions})

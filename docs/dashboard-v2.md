@@ -19,6 +19,10 @@ sự có tác dụng lên `/login`. Xác nhận bằng test gọi thẳng `build
 
 ## 2. `GET /model-health` — độ trễ đo được và cách khống chế
 
+> **MR26:** "trôi" giờ là cửa sổ ĐẦU (300 lần thử) so với cửa sổ GẦN NHẤT (300) của chính log thật, kèm PSI của điểm
+> `hybrid_cp2`; so với train RBA tách riêng thành "khoảng cách RBA → hệ thống" (không phải trôi) cùng độ lệch miền — xem
+> [`vn-recalibration.md`](vn-recalibration.md). Hai cửa sổ: ~4,6 giây trên DB dev (đo lúc dựng MR26). Phần dưới mô tả bản MR17.
+
 Tính PSI cần (a) đọc file parquet train RBA MỘT LẦN (~1,8 giây cho 1.139.727 dòng, cache VĨNH VIỄN trong tiến trình —
 không đổi khi server đang chạy) và (b) tính lại đặc trưng RBA cho MỖI dòng `login_events` thật hiện tại bằng CHÍNH
 `compute_rba_features` của pipeline (vài lượt round-trip DB/dòng, xem `docs/realtime-integration.md`).

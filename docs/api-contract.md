@@ -61,7 +61,7 @@ Web app mẫu (React)                Attack-sim scripts
 | `GET /rules` | 17 | Danh sách MỌI luật kèm trạng thái hiệu lực (mặc định GHÉP ghi đè, nếu có). **Có JWT bắt buộc từ Tuần 5** |
 | `PUT /rules/{id}` | 17 | Bật/tắt + chỉnh tham số một luật (`{mode?, params?}`, chỉ field có mặt mới đổi). **Có JWT bắt buộc từ Tuần 5** |
 | `DELETE /rules/{id}` | 17 | Khôi phục mặc định của sổ đăng ký (xoá hẳn ghi đè). **Có JWT bắt buộc từ Tuần 5** |
-| `GET /model-health` | 17 | Phiên bản mô hình đã đăng ký + trôi đặc trưng (PSI, 300 dòng gần nhất, `?refresh=` bỏ qua cache 10 phút). **Có JWT bắt buộc từ Tuần 5** |
+| `GET /model-health` | 17 | Phiên bản mô hình đã đăng ký + trôi (PSI) của chính hệ thống: 300 lần thử đầu so với 300 gần nhất, theo đặc trưng và theo điểm `hybrid_cp2` (MR26); khoảng cách train RBA → hệ thống (`rba_gap_*`) và độ lệch miền đang dùng / ước lượng từ log thật (`domain_shift`); `?refresh=` bỏ qua cache 10 phút. **Có JWT bắt buộc từ Tuần 5** |
 | `GET /users/{id}/profile` | 17 | Hồ sơ user: timeline (50 gần nhất), alert (20 gần nhất), thiết bị/quốc gia quen, ngưỡng rủi ro riêng (MR15). **Có JWT bắt buộc từ Tuần 5** |
 | `WS /ws/alerts` | 5 | Đẩy cảnh báo real-time, xác thực bằng JWT qua query param `?token=` |
 

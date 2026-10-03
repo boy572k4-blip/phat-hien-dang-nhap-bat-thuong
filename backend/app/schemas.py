@@ -279,13 +279,43 @@ class FeatureDriftOut(BaseModel):
     n_current: int
 
 
+class ScoreDriftOut(BaseModel):
+    """MR26 — trôi của ĐIỂM mô hình `hybrid_cp2` giữa hai cửa sổ log thật (dễ đọc hơn 50 đặc trưng)."""
+
+    psi: float | None
+    verdict: str
+    ml_alert_share_reference: float | None  # tỉ lệ lần thử mà riêng hybrid_cp2 đã đủ cảnh báo, cửa sổ đầu
+    ml_alert_share_current: float | None  # … cửa sổ gần nhất
+
+
+class DomainShiftOut(BaseModel):
+    """MR26 — độ lệch miền đang dùng (đo trên bộ MR24) và ước lượng lại từ log thật (trung vị lần thành công)."""
+
+    success: float
+    failure: float
+    ci95_success: list[float] | None
+    source: str | None
+    live_estimate: float | None
+    live_n: int
+
+
 class ModelHealthOut(BaseModel):
     versions: list[ModelVersionOut]
-    drift_computed_at: datetime | None  # None = chưa từng tính (n_current quá ít hoặc lỗi đọc file tham chiếu)
+    # MR26: "trôi" = cửa sổ ĐẦU của log thật (tham chiếu) so với cửa sổ GẦN NHẤT (hiện tại) — cùng nguồn. Trước MR26 là train
+    # RBA so với log thật (giờ ở rba_gap_*), nên mọi đặc trưng luôn "trôi đáng kể".
+    drift_computed_at: datetime | None  # None = chưa từng tính
     drift_low_confidence: bool
     drift_n_reference: int
     drift_n_current: int
+    drift_reference_from: datetime | None = None
+    drift_reference_to: datetime | None = None
+    drift_current_from: datetime | None = None
+    drift_current_to: datetime | None = None
     drift_top_features: list[FeatureDriftOut]  # sắp theo PSI giảm dần, tối đa 15 đặc trưng trôi nhiều nhất
+    score_drift: ScoreDriftOut | None = None  # None = mô hình chưa nạp
+    rba_gap_n_reference: int = 0
+    rba_gap_top_features: list[FeatureDriftOut] = []  # khoảng cách train RBA -> cửa sổ gần nhất (giải thích, không phải trôi)
+    domain_shift: DomainShiftOut | None = None
 
 
 # ------------------------------------------------------------------------------------------- MR17: hồ sơ rủi ro user

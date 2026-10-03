@@ -124,3 +124,25 @@ def test_current_frame_limit_keeps_the_most_recent_rows_not_the_oldest(db_sessio
 
     assert len(result) == 3
     assert result["u_n_success"].min() >= 7  # dòng thứ 8,9,10 (0-based 7,8,9) có ÍT NHẤT 7 lần thành công trước đó
+
+
+def test_system_windows_compare_the_first_rows_with_the_most_recent_rows_without_overlap(db_session):
+    """MR26: trôi của CHÍNH hệ thống — cửa sổ đầu (tham chiếu) và gần nhất (hiện tại) của log thật, không chồng nhau."""
+    from ml.rba.drift import system_windows
+
+    _make_user_and_events(db_session, count=10)
+
+    reference, current = system_windows(db_session, limit=3)
+    assert len(reference.frame) == len(current.frame) == 3
+    assert reference.frame["u_n_success"].max() <= 2 and current.frame["u_n_success"].min() >= 7
+    assert reference.end < current.start
+
+    first_half, second_half = system_windows(db_session, limit=50)  # chưa đủ 2 × limit -> chia đôi theo thời gian
+    assert len(first_half.frame) == len(second_half.frame) == 5 and first_half.end < second_half.start
+
+
+def test_system_windows_on_an_empty_log_are_empty_not_an_error(db_session):
+    from ml.rba.drift import system_windows
+
+    reference, current = system_windows(db_session, limit=10)
+    assert len(reference.frame) == len(current.frame) == 0 and reference.start is None and current.end is None

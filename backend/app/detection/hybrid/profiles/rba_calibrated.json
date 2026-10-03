@@ -36,18 +36,18 @@
     "calibrated": true,
     "n": 124,
     "ci95": [
-     0.7938,
-     0.9047
+     0.8396,
+     0.9281
     ],
     "source": "corpus_mr24_capped"
    },
    "success_after_failures": {
-    "weight": 0.0409,
+    "weight": 0.0547,
     "calibrated": true,
     "n": 58,
     "ci95": [
-     0.0244,
-     0.0688
+     0.0329,
+     0.0912
     ],
     "source": "corpus_mr24"
    },
@@ -56,8 +56,8 @@
     "calibrated": true,
     "n": 115,
     "ci95": [
-     0.7988,
-     0.8934
+     0.8437,
+     0.9193
     ],
     "source": "corpus_mr24_capped"
    },
@@ -96,8 +96,8 @@
     "calibrated": true,
     "n": 301,
     "ci95": [
-     0.916,
-     0.9541
+     0.9368,
+     0.9658
     ],
     "source": "corpus_mr24_capped"
    },
@@ -106,8 +106,8 @@
     "calibrated": true,
     "n": 42,
     "ci95": [
-     0.4921,
-     0.789
+     0.5684,
+     0.8356
     ],
     "source": "corpus_mr24_capped"
    },
@@ -116,8 +116,8 @@
     "calibrated": true,
     "n": 943,
     "ci95": [
-     0.975,
-     0.9838
+     0.9815,
+     0.9881
     ],
     "source": "corpus_mr24_capped"
    },
@@ -126,8 +126,8 @@
     "calibrated": true,
     "n": 236,
     "ci95": [
-     0.8866,
-     0.9455
+     0.914,
+     0.9593
     ],
     "source": "corpus_mr24_capped"
    },
@@ -136,8 +136,8 @@
     "calibrated": true,
     "n": 82,
     "ci95": [
-     0.7367,
-     0.8603
+     0.7918,
+     0.8933
     ],
     "source": "corpus_mr24_capped"
    },
@@ -146,8 +146,8 @@
     "calibrated": true,
     "n": 383,
     "ci95": [
-     0.9357,
-     0.963
+     0.9519,
+     0.9725
     ],
     "source": "corpus_mr24_capped"
    },
@@ -156,8 +156,8 @@
     "calibrated": true,
     "n": 396,
     "ci95": [
-     0.9361,
-     0.9662
+     0.9522,
+     0.9749
     ],
     "source": "corpus_mr24_capped"
    },
@@ -166,18 +166,18 @@
     "calibrated": true,
     "n": 1059,
     "ci95": [
-     0.2718,
-     0.4808
+     0.3366,
+     0.5573
     ],
     "source": "corpus_mr24_capped"
    },
    "vpn_ip": {
-    "weight": 0.2025,
+    "weight": 0.2566,
     "calibrated": true,
     "n": 559,
     "ci95": [
-     0.1335,
-     0.3097
+     0.1732,
+     0.3788
     ],
     "source": "corpus_mr24"
    },
@@ -1001,5 +1001,17 @@
    0.5479452054794519,
    1.0
   ]
+ },
+ "ml_domain_shift": {
+  "success": 1.7774,
+  "failure": 0.0,
+  "quantile": 0.99,
+  "source": "corpus_mr24",
+  "ci95_success": [
+   1.6107,
+   1.9689
+  ],
+  "n_reference": 1020,
+  "rba_median_success": 0.5949
  }
 }
