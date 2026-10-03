@@ -21,7 +21,7 @@ def _seed_alert(db_session):
     event = LoginEvent(user_id=user.id, attempted_username="alice", success=True, ip_address="1.1.1.1")
     db_session.add(event)
     db_session.flush()
-    alert = Alert(login_event_id=event.id, user_id=user.id, alert_type="hybrid_risk", severity="high", risk_score=80, message="x", status="open")
+    alert = Alert(login_event_id=event.id, user_id=user.id, severity="high", risk_score=80, message="x", status="open")
     db_session.add(alert)
     db_session.commit()
     return alert

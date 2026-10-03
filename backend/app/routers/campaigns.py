@@ -75,7 +75,7 @@ def get_campaign(campaign_id: int, db: Session = Depends(get_db), _admin: dict =
     timeline = [
         CampaignTimelineItem(
             alert_id=a.id, user_id=a.user_id, username=user.username if user is not None else None,
-            alert_type=a.alert_type, severity=a.severity, risk_score=a.risk_score, message=a.message, created_at=a.created_at,
+            attack_family=a.attack_family, severity=a.severity, risk_score=a.risk_score, message=a.message, created_at=a.created_at,
         )
         for a, le, user in rows
     ]

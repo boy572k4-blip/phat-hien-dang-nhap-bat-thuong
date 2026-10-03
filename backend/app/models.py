@@ -80,12 +80,6 @@ class LoginEvent(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    # Tuần 4–MR20: điểm cộng tay của tầng 2; từ MR21 bằng hybrid_risk_score (điểm rủi ro duy nhất, MR23 gộp hẳn hai cột)
-    risk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Điểm bất thường từ ML tầng 3 (Tuần 7). Càng cao càng bất thường theo Isolation Forest, thang không cố định. Từ MR22
-    # tầng 3 là nguồn `ml_geo` của hybrid (không còn alert riêng); cột vẫn ghi cho mọi lần thử vào tài khoản có thật, để tra cứu.
-    ml_anomaly_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-
     # --- MR12: parse UA + tra ASN trong pipeline nền, cùng schema với RBA (ml/rba/features.py) để đặc trưng
     # tính từ luồng thật và đặc trưng huấn luyện trên RBA có cùng ý nghĩa. NULL khi tra/parse thất bại, không raise.
     asn: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -93,8 +87,11 @@ class LoginEvent(Base):
     browser_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     device_type: Mapped[str | None] = mapped_column(String(16), nullable=True)  # mobile | desktop | tablet | bot | unknown (app/utils/device.py)
 
-    # Điểm 0-100 và hành động của hybrid risk engine (MR11: app/detection/hybrid/) — CHẠY SONG SONG risk_score/ml_anomaly_score,
-    # không thay thế. hybrid_action: allow | alert | step_up | lock (chỉ là ĐỀ XUẤT, xem bảng response_actions — chưa tự khoá tài khoản).
+    # Điểm rủi ro DUY NHẤT (0-100) và hành động của lần thử, do hybrid risk engine chấm (MR11; app/detection/hybrid/).
+    # hybrid_action: allow | alert | step_up | lock — step_up/lock được thực thi thật từ MR16 (response_actions, otp_challenges).
+    # MR23 xoá hai cột điểm song song cũ: `risk_score` (điểm cộng tay của tầng 2, Tuần 4) và `ml_anomaly_score` (tầng 3, Tuần 7
+    # — từ MR22 là nguồn `ml_geo` bên trong điểm này, xem `alerts.explanation`). NULL ở lần thử cũ hơn MR12 hoặc khi khối
+    # chấm điểm lỗi.
     hybrid_risk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hybrid_action: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
@@ -162,27 +159,31 @@ class KnownLocation(Base):
 
 
 class Alert(Base):
-    """Cảnh báo sinh ra khi rule tầng 1 khớp hoặc risk_score vượt ngưỡng (mục 4.2: >70 = cao)."""
+    """MỘT sự cố (MR23): chuỗi lần thử bị đánh giá khác `allow` của cùng một tài khoản (hoặc cùng IP khi tên đăng nhập không
+    tồn tại), mỗi lần cách lần trước không quá 15 phút — `app/detection/alert_intelligence.py::Incident`.
+
+    Chỉ còn MỘT loại cảnh báo: cột `alert_type` (brute_force | credential_stuffing | impossible_travel | high_risk_score |
+    ml_anomaly | hybrid_risk) bị xoá ở MR23; cảnh báo cũ giữ loại gốc trong `explanation.legacy_alert_type` (migration
+    7d2c1e5a9b30)."""
 
     __tablename__ = "alerts"
-    __table_args__ = (Index("ix_alerts_dedup_lookup", "user_id", "attack_family", "status"),)
+    __table_args__ = (Index("ix_alerts_open_incident", "user_id", "status", "last_seen_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    login_event_id: Mapped[int] = mapped_column(ForeignKey("login_events.id"), nullable=False, index=True)
+    login_event_id: Mapped[int] = mapped_column(ForeignKey("login_events.id"), nullable=False, index=True)  # lần thử ĐẦU TIÊN của sự cố
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
-    # brute_force | credential_stuffing | impossible_travel | high_risk_score | ml_anomaly (Tuần 7) | hybrid_risk (MR12).
-    # Từ MR22 chỉ còn tạo hybrid_risk; các loại khác chỉ có trong dữ liệu cũ (tầng 1-2 xoá ở MR21, ml_anomaly ở MR22).
-    alert_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    # low | medium | high — ánh xạ từ risk_score theo mục 4.2 (<40 / 40-70 / >70)
+    # medium (hành động nặng nhất là alert) | high (step_up/lock); cảnh báo cũ có thể là low
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
-    risk_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    risk_score: Mapped[int] = mapped_column(Integer, nullable=False)  # điểm cao nhất của sự cố
     message: Mapped[str] = mapped_column(Text, nullable=False)
 
     # --- MR12: gắn cảnh báo với luật/mô hình đã sinh ra nó và với chiến dịch (MR13 gom thành campaign) ---
-    rule_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # mã luật (app/detection/engine/registry.py) đã khớp; None nếu chỉ do ML/tầng 1-2 cũ
-    attack_family: Mapped[str | None] = mapped_column(String(64), nullable=True)  # dự trữ cho MR13 (gán họ tấn công)
-    explanation: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # danh sách đóng góp (RiskResult.contributions của MR11), để hiển thị "vì sao"
+    rule_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # luật đại diện (Incident.rule_id); None nếu chỉ có bằng chứng mô hình
+    attack_family: Mapped[str | None] = mapped_column(String(64), nullable=True)  # họ tấn công GỢI Ý (MR13) của lần thử điểm cao nhất
+    # MR23: {"contributions": mọi bằng chứng của sự cố (nguồn, nhãn, trọng số, nhóm), "action": hành động nặng nhất,
+    # "forced_by": luật ép hành động đó, "evidence": chi tiết theo luật (vd toạ độ hai đầu của di chuyển bất khả thi)}
+    explanation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     campaign_id: Mapped[int | None] = mapped_column(ForeignKey("campaigns.id"), nullable=True)
     # open | acknowledged | resolved | false_positive — cờ `resolved` cũ GIỮ NGUYÊN (tương thích ngược); `status` chi tiết hơn cho MR13/14
     status: Mapped[str] = mapped_column(String(16), server_default="open", nullable=False)
@@ -191,7 +192,7 @@ class Alert(Base):
     # --- MR13: cảnh báo thông minh v2 (app/detection/alert_intelligence.py) ---
     # độ tin cậy [0,1] của attack_family (= trọng số của bằng chứng dẫn đầu trong RiskResult.contributions) — LUÔN là gợi ý, không phải khẳng định
     attack_family_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # chống trùng lặp: cùng (user_id hoặc IP) + attack_family trong cửa sổ ngắn GỘP vào 1 hàng thay vì tạo hàng mới (xem dedup_window trong alert_intelligence.py)
+    # số lần thử của sự cố và thời điểm (đăng nhập) của lần gần nhất — cửa sổ trượt 15 phút tính từ đây (MR23)
     occurrence_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # novelty_level × attack_family_confidence × User.importance — dùng để sắp xếp GET /alerts (mặc định), không thay severity/risk_score

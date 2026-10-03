@@ -20,7 +20,7 @@ def _alert(db, user, status, *, minutes=0):
     ev = LoginEvent(user_id=user.id if user else None, attempted_username=user.username if user else "ghost", success=True, ip_address="1.1.1.1", created_at=BASE)
     db.add(ev)
     db.flush()
-    a = Alert(login_event_id=ev.id, user_id=user.id if user else None, alert_type="hybrid_risk", severity="high", risk_score=80, message="x", status=status, created_at=BASE)
+    a = Alert(login_event_id=ev.id, user_id=user.id if user else None, severity="high", risk_score=80, message="x", status=status, created_at=BASE)
     db.add(a)
     db.flush()
     return a

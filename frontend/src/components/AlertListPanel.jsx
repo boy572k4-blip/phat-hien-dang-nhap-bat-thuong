@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { apiClient } from "../services/api";
+import { actionLabel, alertTitle, evidenceGroupLabel, incidentAction } from "../services/risk";
 import "./AlertListPanel.css";
 
 const PAGE_SIZE = 15;
@@ -23,6 +24,8 @@ function buildParams(filters) {
 // phải ngay khi bấm.
 // MR17 "Dashboard v2" — bộ lọc mở rộng (họ tấn công, rule, chiến dịch, phản hồi): có bộ lọc thì TẠM NGỪNG tự chèn
 // alert mới qua WebSocket (latestAlert) — alert mới chưa chắc khớp bộ lọc đang xem, chèn bừa sẽ gây hiểu nhầm.
+// MR23: một cảnh báo = một sự cố. Lần thử mới của một sự cố đang mở gửi lại CÙNG `id` — thay hàng cũ và đưa lên đầu,
+// không chèn thêm hàng trùng. Mỗi cảnh báo liệt kê đủ bằng chứng của cả sự cố (`explanation.contributions`).
 export default function AlertListPanel({ latestAlert }) {
   const [alerts, setAlerts] = useState(null);
   const [error, setError] = useState(null);
@@ -47,7 +50,7 @@ export default function AlertListPanel({ latestAlert }) {
 
   useEffect(() => {
     if (!latestAlert || hasActiveFilters) return;
-    setAlerts((prev) => [latestAlert, ...(prev ?? [])].slice(0, PAGE_SIZE));
+    setAlerts((prev) => [latestAlert, ...(prev ?? []).filter((a) => a.id !== latestAlert.id)].slice(0, PAGE_SIZE));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latestAlert]);
 
@@ -105,13 +108,29 @@ export default function AlertListPanel({ latestAlert }) {
         )}
         {!error && alerts !== null && alerts.length > 0 && (
           <ul className="alert-list__items">
-            {alerts.map((alert) => (
+            {alerts.map((alert) => {
+              const action = incidentAction(alert);
+              const evidence = alert.explanation?.contributions ?? [];
+              return (
               <li key={alert.id} className={`alert-list__item alert-list__item--${alert.severity}`}>
-                <strong>{alert.alert_type}</strong> ({alert.severity}, {alert.risk_score}đ)
+                <strong>{alertTitle(alert)}</strong> ({action ? actionLabel(action) : alert.severity}, {alert.risk_score}đ
+                {alert.occurrence_count > 1 ? `, ${alert.occurrence_count} lần thử` : ""})
                 {alert.user_id ? <Link to={`/dashboard/users/${alert.user_id}`}> · hồ sơ</Link> : null}
                 {alert.campaign_id ? <Link to={`/dashboard/campaigns/${alert.campaign_id}`}> · chiến dịch</Link> : null}
                 <br />
                 {alert.message}
+                {evidence.length > 0 && (
+                  <details className="alert-list__evidence">
+                    <summary>Bằng chứng ({evidence.length})</summary>
+                    <ul>
+                      {evidence.map((c) => (
+                        <li key={c.source}>
+                          {c.label} — {Math.round(c.weight * 100)}% <span className="alert-list__evidence-group">({evidenceGroupLabel(c.group)})</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
                 <div className="alert-list__feedback">
                   {alert.status === "open" ? (
                     <>
@@ -129,7 +148,8 @@ export default function AlertListPanel({ latestAlert }) {
                   )}
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>

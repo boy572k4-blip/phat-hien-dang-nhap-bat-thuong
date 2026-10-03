@@ -163,11 +163,9 @@ def _all_alert_mechanisms(session_factory) -> list[str]:
     db = session_factory()
     try:
         mechanisms = []
+        # MR23: một loại cảnh báo duy nhất (sự cố của hybrid risk engine) — phân biệt bằng luật đại diện.
         for a in db.execute(select(Alert)).scalars():
-            if a.alert_type == "hybrid_risk":
-                mechanisms.append(f"hybrid_risk (rule={a.rule_id})" if a.rule_id else "hybrid_risk (chỉ ML, không luật nào khớp)")
-            else:
-                mechanisms.append(a.alert_type)
+            mechanisms.append(f"hybrid_risk (rule={a.rule_id})" if a.rule_id else "hybrid_risk (chỉ ML, không luật nào khớp)")
         return mechanisms
     finally:
         db.close()

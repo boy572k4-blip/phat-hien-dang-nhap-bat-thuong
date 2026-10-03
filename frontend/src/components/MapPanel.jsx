@@ -5,6 +5,9 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useEffect, useState } from "react";
 import { MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
 
+import { apiClient } from "../services/api";
+import { travelLine } from "../services/risk";
+
 // Fix icon marker mặc định của Leaflet bị vỡ khi bundler (Vite) không tự
 // resolve đúng đường dẫn ảnh — lỗi rất phổ biến với react-leaflet.
 delete L.Icon.Default.prototype._getIconUrl;
@@ -29,23 +32,31 @@ function FitBoundsOnChange({ bounds }) {
   return null;
 }
 
-// Khu vực bản đồ (nhiệm vụ 3.4) — vẽ điểm + đường nối khi nhận qua WebSocket
-// real-time (nhiệm vụ 5.3) một cảnh báo có kèm toạ độ điểm đăng nhập TRƯỚC.
-// MR21: không còn alert `impossible_travel` riêng (tầng 1 đã gộp vào rule engine
-// v2) — cảnh báo hybrid mang toạ độ đó khi luật di chuyển bất khả thi khớp, nên
-// chỉ cần xét có toạ độ hay không, không xét loại cảnh báo.
+// Khu vực bản đồ (nhiệm vụ 3.4) — vẽ hai điểm + đường nối của lần di chuyển
+// bất khả thi gần nhất. MR23: hai đầu đường bay đọc từ bằng chứng ĐÃ LƯU của
+// cảnh báo (`explanation.evidence.impossible_travel`) — cả khi nhận qua
+// WebSocket (nhiệm vụ 5.3) lẫn khi mở/tải lại trang (lấy từ các cảnh báo gần
+// đây), không còn phụ thuộc loại cảnh báo hay payload riêng.
 export default function MapPanel({ latestAlert }) {
-  const [travelLine, setTravelLine] = useState(null);
+  const [line, setLine] = useState(null);
 
   useEffect(() => {
-    if (!latestAlert) return;
-    const { previous_latitude, previous_longitude, latitude, longitude } = latestAlert;
-    if (previous_latitude == null || previous_longitude == null || latitude == null || longitude == null) return;
+    let cancelled = false;
+    apiClient
+      .get("/alerts", { params: { sort: "recent", page_size: 50 } })
+      .then((res) => {
+        const recent = res.data.items.map(travelLine).find(Boolean);
+        if (!cancelled && recent) setLine((current) => current ?? recent);
+      })
+      .catch(() => {}); // bản đồ vẫn dùng được khi không tải được lịch sử, chỉ chưa có đường bay cũ
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-    setTravelLine({
-      from: [previous_latitude, previous_longitude],
-      to: [latitude, longitude],
-    });
+  useEffect(() => {
+    const latest = travelLine(latestAlert);
+    if (latest) setLine(latest);
   }, [latestAlert]);
 
   return (
@@ -57,12 +68,12 @@ export default function MapPanel({ latestAlert }) {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {travelLine && (
+          {line && (
             <>
-              <Marker position={travelLine.from} />
-              <Marker position={travelLine.to} />
-              <Polyline positions={[travelLine.from, travelLine.to]} pathOptions={{ color: "red" }} />
-              <FitBoundsOnChange bounds={[travelLine.from, travelLine.to]} />
+              <Marker position={line.from} />
+              <Marker position={line.to} />
+              <Polyline positions={[line.from, line.to]} pathOptions={{ color: "red" }} />
+              <FitBoundsOnChange bounds={[line.from, line.to]} />
             </>
           )}
         </MapContainer>

@@ -196,7 +196,7 @@ def _hybrid_alerts_for_user(session_factory, user_id: int) -> list:
 
     db = session_factory()
     try:
-        return db.query(Alert).filter(Alert.user_id == user_id, Alert.alert_type == "hybrid_risk").order_by(Alert.id).all()
+        return db.query(Alert).filter(Alert.user_id == user_id).order_by(Alert.id).all()
     finally:
         db.close()
 

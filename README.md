@@ -9,7 +9,8 @@ một điểm rủi ro và một hành động — cho qua / cảnh báo / xác 
 như một web app thông thường. Tầng 1 (luật đếm riêng, Tuần 3) và tầng 2 (cộng
 điểm tay, Tuần 4) đã gộp vào bộ luật ở MR21 — [`docs/rule-unification.md`](docs/rule-unification.md);
 mô hình địa lý-thời gian (tầng 3) thành nguồn bằng chứng của hybrid ở MR22, không còn cảnh báo riêng —
-[`docs/geo-model-integration.md`](docs/geo-model-integration.md).
+[`docs/geo-model-integration.md`](docs/geo-model-integration.md); từ MR23 mỗi lần thử có đúng một điểm và một hành động,
+mỗi sự cố đúng một cảnh báo liệt kê đủ bằng chứng — [`docs/incident-unification.md`](docs/incident-unification.md).
 Toàn cảnh cơ chế nào bắt hành vi nào: [`docs/behavior-coverage-matrix.md`](docs/behavior-coverage-matrix.md).
 
 Tiến độ triển khai theo hai giai đoạn: **Tuần 1-8** (khung hệ thống, xem "Trạng

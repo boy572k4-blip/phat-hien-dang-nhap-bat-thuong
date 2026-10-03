@@ -13,7 +13,7 @@ from app.detection import hybrid_runtime
 from app.detection.alert_intelligence import GEO_FAMILY
 from app.detection.hybrid import GEO_LABEL, geo_probability
 from app.detection.pipeline import run_detection_pipeline
-from app.models import Alert, LoginEvent, User
+from app.models import Alert, User
 from ml.attack_scenarios import CHROME_UA, HANOI_FPT_IP
 
 BASE = datetime(2026, 3, 2, 9, 0, 0, tzinfo=timezone.utc)
@@ -45,15 +45,18 @@ def _daily_logins(user, days):
     ]
 
 
-def test_the_first_logins_of_a_new_account_are_not_scored_even_when_the_model_flags_them(db_session):
-    """Lỗi MR18 đã sửa: trước MR22 lần đăng nhập ĐẦU TIÊN của mọi tài khoản đều thành alert `ml_anomaly`."""
+def test_the_first_logins_of_a_new_account_are_not_scored_even_when_the_model_flags_them(db_session, monkeypatch):
+    """Lỗi MR18 đã sửa: trước MR22 lần đăng nhập ĐẦU TIÊN của mọi tài khoản đều thành alert `ml_anomaly`. Từ MR23 mô hình
+    còn không được gọi dưới cổng (MR22 vẫn chấm để ghi `ml_anomaly_score` — cột đó đã xoá)."""
+    calls = []
+    monkeypatch.setattr("app.detection.pipeline.ml_model.predict", lambda features: calls.append(features) or {"is_anomaly": True, "anomaly_score": 0.7, "margin": MARGIN})
     user = _user(db_session)
     results = _daily_logins(user, 5)  # 0..4 lần thành công trước đó: dưới cổng
 
     assert [r.hybrid_action for r in results] == ["allow"] * 5
     assert db_session.query(Alert).count() == 0
-    events = db_session.query(LoginEvent).order_by(LoginEvent.created_at).all()
-    assert [e.ml_anomaly_score for e in events] == [0.7] * 5  # điểm tầng 3 vẫn được ghi để tra cứu, chỉ không thành bằng chứng
+    assert calls == []
+    assert len(_daily_logins(_user(db_session, "veteran"), 6)) == 6 and len(calls) == 1  # qua cổng ở lần thứ 6: được chấm
 
 
 def test_past_the_gate_a_flagged_login_becomes_one_hybrid_alert_with_the_ml_geo_source(db_session):
@@ -64,9 +67,8 @@ def test_past_the_gate_a_flagged_login_becomes_one_hybrid_alert_with_the_ml_geo_
     expected = geo_probability(MARGIN, SLOPE, bands)
     assert results[-1].hybrid_action == "alert" and results[-1].hybrid_risk_score == round(expected * 100)
 
-    assert db_session.query(Alert).filter(Alert.alert_type == "ml_anomaly").count() == 0  # không còn alert tầng 3 riêng
-    (alert,) = db_session.query(Alert).all()
-    assert alert.alert_type == "hybrid_risk" and alert.attack_family == GEO_FAMILY
+    (alert,) = db_session.query(Alert).all()  # một cảnh báo duy nhất — không còn alert tầng 3 riêng
+    assert alert.attack_family == GEO_FAMILY
     assert alert.rule_id is None  # mô hình không phải luật — `rule_id` chỉ lấy từ bằng chứng luật/danh tiếng
     (geo,) = [c for c in alert.explanation["contributions"] if c["source"] == "ml_geo"]
     assert geo["group"] == "ml" and geo["label"] == f"{GEO_LABEL}: vị trí mới ↑"  # giữ phần diễn giải của alert tầng 3 cũ

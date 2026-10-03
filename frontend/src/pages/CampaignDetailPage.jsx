@@ -73,7 +73,8 @@ export default function CampaignDetailPage() {
           <ul className="campaign-timeline">
             {campaign.timeline.map((item) => (
               <li key={item.alert_id} className={`campaign-timeline__item campaign-timeline__item--${item.severity}`}>
-                <strong>{item.username ?? `? ${item.alert_type}`}</strong> — {item.message}
+                <strong>{item.username ?? "(tên đăng nhập không tồn tại)"}</strong>
+                {item.attack_family ? ` · ${item.attack_family}` : ""} — {item.message}
                 <br />
                 <small>
                   {new Date(item.created_at).toLocaleString("vi-VN")} · {item.risk_score}đ

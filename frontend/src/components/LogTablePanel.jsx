@@ -2,19 +2,18 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { apiClient } from "../services/api";
+import { ACTION_LABELS, actionLabel, actionLevel } from "../services/risk";
 import "./LogTablePanel.css";
 
 const PAGE_SIZE = 15;
 
-const EMPTY_FILTERS = { username: "", success: "", risk_level: "", is_synthetic: "" };
+const EMPTY_FILTERS = { username: "", success: "", action: "", is_synthetic: "" };
 
-// Tô màu dòng theo risk_score, đúng ngưỡng đã định nghĩa ở nhiệm vụ 4.2
-// (< 40 bình thường, 40-70 trung bình, > 70 cao).
-function riskClassName(riskScore) {
-  if (riskScore === null || riskScore === undefined) return "";
-  if (riskScore > 70) return "risk-row--high";
-  if (riskScore >= 40) return "risk-row--medium";
-  return "risk-row--low";
+// MR23: tô màu dòng theo HÀNH ĐỘNG đã quyết định cho lần thử (đã gồm ngưỡng riêng của tài khoản và hành động tối thiểu
+// của luật), không theo ngưỡng điểm cứng 40/70 của Tuần 4.
+function rowClassName(action) {
+  const level = actionLevel(action);
+  return level ? `risk-row--${level}` : "";
 }
 
 // Chuyển filter UI (chuỗi rỗng = "tất cả") thành query param gửi backend.
@@ -22,14 +21,14 @@ function buildParams(page, filters) {
   const params = { page, page_size: PAGE_SIZE };
   if (filters.username.trim()) params.username = filters.username.trim();
   if (filters.success !== "") params.success = filters.success === "true";
-  if (filters.risk_level !== "") params.risk_level = filters.risk_level;
+  if (filters.action !== "") params.action = filters.action;
   if (filters.is_synthetic !== "") params.is_synthetic = filters.is_synthetic === "true";
   return params;
 }
 
 // Khu vực bảng log đăng nhập (nhiệm vụ 4.3) — nối GET /login-events thật,
 // có phân trang + BỘ LỌC (nâng cấp sau Tuần 7: log lên tới hàng nghìn dòng,
-// cần lọc theo username/kết quả/mức rủi ro/dữ liệu thật-hay-giả-lập).
+// cần lọc theo username/kết quả/hành động/dữ liệu thật-hay-giả-lập).
 // `refreshKey` tăng lên mỗi khi có cảnh báo mới qua WebSocket (nhiệm vụ
 // 5.3) để bảng tự làm mới mà không cần reload trang.
 export default function LogTablePanel({ refreshKey = 0 }) {
@@ -100,11 +99,13 @@ export default function LogTablePanel({ refreshKey = 0 }) {
           <option value="true">Thành công</option>
           <option value="false">Thất bại</option>
         </select>
-        <select value={filters.risk_level} onChange={(e) => updateFilter("risk_level", e.target.value)}>
-          <option value="">Risk: tất cả</option>
-          <option value="low">Thấp (&lt;40)</option>
-          <option value="medium">Trung bình (40-70)</option>
-          <option value="high">Cao (&gt;70)</option>
+        <select value={filters.action} onChange={(e) => updateFilter("action", e.target.value)}>
+          <option value="">Hành động: tất cả</option>
+          {Object.entries(ACTION_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
         </select>
         <select value={filters.is_synthetic} onChange={(e) => updateFilter("is_synthetic", e.target.value)}>
           <option value="">Dữ liệu: tất cả</option>
@@ -147,21 +148,19 @@ export default function LogTablePanel({ refreshKey = 0 }) {
                   <th>Thời gian</th>
                   <th>Username</th>
                   <th>Kết quả</th>
-                  <th>Risk</th>
-                  <th title="Điểm bất thường từ ML tầng 3 (Isolation Forest) — tham khảo, xem docs/ml-evaluation.md">
-                    ML
-                  </th>
+                  <th title="Điểm rủi ro 0-100 của hybrid risk engine — một điểm duy nhất cho mỗi lần thử">Điểm</th>
+                  <th>Hành động</th>
                   <th>Vị trí</th>
                 </tr>
               </thead>
               <tbody>
                 {data.items.map((event) => (
-                  <tr key={event.id} className={riskClassName(event.risk_score)}>
+                  <tr key={event.id} className={rowClassName(event.hybrid_action)}>
                     <td>{new Date(event.created_at).toLocaleString("vi-VN")}</td>
                     <td>{event.user_id ? <Link to={`/dashboard/users/${event.user_id}`}>{event.attempted_username}</Link> : event.attempted_username}</td>
                     <td>{event.success ? "✅" : "❌"}</td>
-                    <td>{event.risk_score ?? "-"}</td>
-                    <td>{event.ml_anomaly_score != null ? event.ml_anomaly_score.toFixed(2) : "-"}</td>
+                    <td>{event.hybrid_risk_score ?? "-"}</td>
+                    <td>{actionLabel(event.hybrid_action)}</td>
                     <td>{event.city ? `${event.city}, ${event.country}` : "-"}</td>
                   </tr>
                 ))}

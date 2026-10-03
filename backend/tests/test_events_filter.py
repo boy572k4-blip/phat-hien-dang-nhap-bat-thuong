@@ -1,4 +1,5 @@
-"""Kiểm tra bộ lọc GET /login-events (nâng cấp sau Tuần 7)."""
+"""Kiểm tra bộ lọc GET /login-events (nâng cấp sau Tuần 7; MR23: lọc theo hành động của hybrid risk engine thay cho mức
+low/medium/high theo ngưỡng cứng 40/70, và trả kèm ngưỡng hành động đang dùng)."""
 
 from datetime import datetime, timezone
 
@@ -24,10 +25,10 @@ def _seed_events(db_session):
 
     now = datetime.now(timezone.utc)
     events = [
-        LoginEvent(user_id=user.id, attempted_username="alice", success=True, ip_address="1.1.1.1", risk_score=10, is_synthetic=False, created_at=now),
-        LoginEvent(user_id=user.id, attempted_username="alice", success=False, ip_address="1.1.1.1", risk_score=50, is_synthetic=False, created_at=now),
-        LoginEvent(user_id=None, attempted_username="bob", success=False, ip_address="2.2.2.2", risk_score=80, is_synthetic=False, created_at=now),
-        LoginEvent(user_id=user.id, attempted_username="alice", success=True, ip_address="1.1.1.1", risk_score=None, is_synthetic=True, created_at=now),
+        LoginEvent(user_id=user.id, attempted_username="alice", success=True, ip_address="1.1.1.1", hybrid_risk_score=10, hybrid_action="allow", is_synthetic=False, created_at=now),
+        LoginEvent(user_id=user.id, attempted_username="alice", success=False, ip_address="1.1.1.1", hybrid_risk_score=50, hybrid_action="alert", is_synthetic=False, created_at=now),
+        LoginEvent(user_id=None, attempted_username="bob", success=False, ip_address="2.2.2.2", hybrid_risk_score=80, hybrid_action="lock", is_synthetic=False, created_at=now),
+        LoginEvent(user_id=user.id, attempted_username="alice", success=True, ip_address="1.1.1.1", hybrid_risk_score=None, hybrid_action=None, is_synthetic=True, created_at=now),
     ]
     db_session.add_all(events)
     db_session.commit()
@@ -53,17 +54,30 @@ def test_filter_by_success(client, db_session):
     assert all(item["success"] is False for item in body["items"])
 
 
-def test_filter_by_risk_level(client, db_session):
+def test_filter_by_the_action_the_engine_decided(client, db_session):
+    """Lọc theo hành động ĐÃ LƯU, không theo điểm: hành động đã gồm ngưỡng riêng của tài khoản (MR15) và hành động tối
+    thiểu của luật (MR21) — điểm 50 ở đây là `alert` dù 50 không vượt ngưỡng step_up của hồ sơ nào."""
     headers = _admin_headers(client, db_session)
     _seed_events(db_session)
 
-    low = client.get("/login-events", params={"risk_level": "low"}, headers=headers).json()
-    medium = client.get("/login-events", params={"risk_level": "medium"}, headers=headers).json()
-    high = client.get("/login-events", params={"risk_level": "high"}, headers=headers).json()
+    totals = {action: client.get("/login-events", params={"action": action}, headers=headers).json()["total"] for action in ("allow", "alert", "step_up", "lock")}
 
-    assert low["total"] == 1  # risk_score=10
-    assert medium["total"] == 1  # risk_score=50
-    assert high["total"] == 1  # risk_score=80
+    assert totals == {"allow": 1, "alert": 1, "step_up": 0, "lock": 1}
+    assert client.get("/login-events", params={"action": "high"}, headers=headers).status_code == 422
+
+
+def test_the_response_carries_the_action_bands_in_use_and_one_score_per_attempt(client, db_session):
+    from app.detection import hybrid_runtime
+
+    headers = _admin_headers(client, db_session)
+    _seed_events(db_session)
+
+    body = client.get("/login-events", headers=headers).json()
+
+    bands = hybrid_runtime.get_engine().profile.bands
+    assert body["action_bands"] == {"alert_at": bands.alert_at, "step_up_at": bands.step_up_at, "lock_at": bands.lock_at}
+    assert all("risk_score" not in item and "ml_anomaly_score" not in item for item in body["items"])  # MR23: một điểm
+    assert sorted(item["hybrid_risk_score"] for item in body["items"] if item["hybrid_risk_score"] is not None) == [10, 50, 80]
 
 
 def test_filter_by_is_synthetic(client, db_session):

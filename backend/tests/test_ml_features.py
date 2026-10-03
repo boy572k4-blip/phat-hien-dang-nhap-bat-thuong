@@ -119,3 +119,49 @@ def test_compute_realtime_features_tolerates_a_previous_event_read_back_naive_fr
     )
 
     assert features["minutes_since_last_login"] == pytest.approx(90.0)
+
+
+def test_realtime_features_match_offline_features_when_the_current_login_is_already_recorded(db_session):
+    """MR23 — lệch train/serve có từ Tuần 7: pipeline GHI lần thử hiện tại (flush) TRƯỚC khi tính đặc trưng tầng 3, còn
+    truy vấn "lần thành công gần nhất" thiếu chặn `created_at < now` nên thấy chính lần đó — `minutes_since_last_login`
+    luôn = 0 cho mọi lần đăng nhập thành công trên luồng thật. Test trên (90 phút) không thấy vì không ghi lần thử hiện
+    tại trước. Ở đây phát lại CÙNG một chuỗi đăng nhập theo đúng thứ tự của pipeline (ghi -> tính -> cập nhật hồ sơ) và
+    theo đường offline (`compute_features`/`update_state`, dùng khi train): 9 đặc trưng phải trùng nhau ở mọi lần."""
+    from app.detection.baseline import record_known_device_if_new, record_known_location_if_new, update_baseline_after_successful_login
+    from app.models import LoginEvent, User, UserBaseline
+    from ml.features import FEATURE_NAMES, compute_realtime_features
+
+    user = User(username="parity", password_hash="x")
+    db_session.add(user)
+    db_session.flush()
+    start = datetime(2026, 3, 1, 8, 15, tzinfo=timezone.utc)
+    hanoi, hcmc = ("VN", "Hanoi", 21.03, 105.85), ("VN", "Ho Chi Minh City", 10.82, 106.63)
+    logins = [  # (thời điểm, vị trí, thiết bị): giờ khác nhau, thiết bị mới, vị trí mới, một khoảng im lặng dài
+        (start, hanoi, "fp-laptop"),
+        (start + timedelta(days=1, minutes=20), hanoi, "fp-laptop"),
+        (start + timedelta(days=2, hours=3), hanoi, "fp-phone"),
+        (start + timedelta(days=2, hours=3, minutes=7), hcmc, "fp-phone"),
+        (start + timedelta(days=40), hcmc, "fp-tablet"),
+    ]
+    state = UserHistoryState()
+    for ts, (country, city, lat, lon), fp in logins:
+        offline = compute_features(state, country=country, city=city, latitude=lat, longitude=lon, device_fingerprint=fp, created_at=ts)
+        update_state(state, country=country, city=city, latitude=lat, longitude=lon, device_fingerprint=fp, created_at=ts)
+
+        event = LoginEvent(
+            user_id=user.id, attempted_username="parity", success=True, ip_address="1.2.3.4", device_fingerprint=fp,
+            country=country, city=city, latitude=lat, longitude=lon, is_synthetic=False, created_at=ts,
+        )
+        db_session.add(event)
+        db_session.flush()  # như pipeline: lần thử đã nằm trong DB khi tính đặc trưng
+        baseline = db_session.query(UserBaseline).filter(UserBaseline.user_id == user.id).first()
+        live = compute_realtime_features(
+            db_session, user_id=user.id, baseline=baseline, country=country, city=city, latitude=lat, longitude=lon,
+            device_fingerprint=fp, created_at=ts,
+        )
+        update_baseline_after_successful_login(db_session, user, event)
+        record_known_device_if_new(db_session, user, fp, None)
+        record_known_location_if_new(db_session, user, country, city)
+
+        for name in FEATURE_NAMES:
+            assert live[name] == pytest.approx(offline[name], abs=1e-6), (ts, name, live[name], offline[name])

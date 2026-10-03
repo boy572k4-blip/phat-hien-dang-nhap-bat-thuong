@@ -10,16 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_admin
+from app.detection import hybrid_runtime
 from app.models import LoginEvent
-from app.schemas import PaginatedLoginEvents
+from app.schemas import ActionBandsOut, PaginatedLoginEvents
 
 router = APIRouter()
-
-# Ngưỡng mức hiển thị low/medium/high (mục 4.2, Tuần 4) — trùng màu tô dòng của bảng log ở frontend (LogTablePanel.jsx).
-# Từ MR21 cột `risk_score` chứa điểm rủi ro DUY NHẤT (điểm hybrid) thay cho điểm cộng tay của tầng 2 đã xoá; MR23 đồng bộ
-# các mức này với ngưỡng hành động của hybrid (alert/step_up/lock) khi gộp hẳn hai cột điểm.
-LOW_RISK_MAX = 40
-MEDIUM_RISK_MAX = 70
 
 
 @router.get("/login-events", response_model=PaginatedLoginEvents)
@@ -28,7 +23,10 @@ def list_login_events(
     page_size: int = Query(20, ge=1, le=100),
     username: str | None = Query(None, description="Lọc gần đúng theo username (không phân biệt hoa/thường)"),
     success: bool | None = Query(None, description="Lọc theo kết quả đăng nhập"),
-    risk_level: str | None = Query(None, pattern="^(low|medium|high)$", description="low | medium | high — theo ngưỡng mục 4.2"),
+    action: str | None = Query(
+        None, pattern="^(allow|alert|step_up|lock)$",
+        description="Lọc theo hành động mà hybrid risk engine đã quyết định cho lần thử (MR23 — thay mức low/medium/high theo ngưỡng cứng 40/70 của Tuần 4)",
+    ),
     is_synthetic: bool | None = Query(None, description="True = chỉ dữ liệu giả lập, False = chỉ dữ liệu thật"),
     db: Session = Depends(get_db),
     _admin: dict = Depends(require_admin),
@@ -41,14 +39,16 @@ def list_login_events(
         query = query.filter(LoginEvent.success.is_(success))
     if is_synthetic is not None:
         query = query.filter(LoginEvent.is_synthetic.is_(is_synthetic))
-    if risk_level == "low":
-        query = query.filter(LoginEvent.risk_score.isnot(None), LoginEvent.risk_score < LOW_RISK_MAX)
-    elif risk_level == "medium":
-        query = query.filter(LoginEvent.risk_score >= LOW_RISK_MAX, LoginEvent.risk_score <= MEDIUM_RISK_MAX)
-    elif risk_level == "high":
-        query = query.filter(LoginEvent.risk_score > MEDIUM_RISK_MAX)
+    if action is not None:
+        # Lọc theo hành động ĐÃ LƯU của từng lần thử, không tính lại từ điểm: hành động đã phản ánh ngưỡng riêng của tài
+        # khoản (MR15) và hành động tối thiểu của luật (MR21) — hai thứ một ngưỡng điểm cố định không thấy được.
+        query = query.filter(LoginEvent.hybrid_action == action)
 
     query = query.order_by(LoginEvent.created_at.desc())
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
-    return PaginatedLoginEvents(items=items, total=total, page=page, page_size=page_size)
+    bands = hybrid_runtime.get_engine().profile.bands
+    return PaginatedLoginEvents(
+        items=items, total=total, page=page, page_size=page_size,
+        action_bands=ActionBandsOut(alert_at=bands.alert_at, step_up_at=bands.step_up_at, lock_at=bands.lock_at),
+    )

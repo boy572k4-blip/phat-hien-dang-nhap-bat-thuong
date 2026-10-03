@@ -6,14 +6,18 @@ from app.detection.alert_intelligence import (
     DEDUP_WINDOW,
     GEO_FAMILY,
     ML_COMPONENT_FAMILY,
+    Incident,
     NoveltyFact,
     action_escalated,
     build_alert_message,
     compute_novelty,
+    evidence_of,
+    json_safe,
     priority_score,
     suggest_attack_family,
 )
 from app.detection.engine.registry import CATEGORIES, REGISTRY
+from app.detection.engine.types import RuleHit
 from app.detection.hybrid import Contribution, RiskResult
 from ml.rba.explain import COMPONENT_LABELS
 from ml.rba.features import EventRecord, GlobalCounts, HistorySummary, InfraStats, UserHistory
@@ -203,5 +207,103 @@ def test_message_mentions_repeat_count_only_when_deduped():
     message_repeat = build_alert_message(
         _risk_result([Contribution("blocklist_hit", "x", 0.9, "reputation")]), novelty_facts=[], family="Danh tiếng hạ tầng", confidence=0.9, occurrence_count=4,
     )
-    assert "lặp lại" not in message_first
-    assert "Đã lặp lại 4 lần trong 15 phút gần đây." in message_repeat
+    assert "Sự cố gồm" not in message_first
+    assert "Sự cố gồm 4 lần thử, mỗi lần cách lần trước không quá 15 phút." in message_repeat
+
+
+# ------------------------------------------------------------------------------------------- sự cố (MR23)
+
+
+def _risk(score, action, contributions, overridden_by=None) -> RiskResult:
+    return RiskResult(
+        score=score, action=action, probability=score / 100, ml_probability=None, rule_probability=score / 100,
+        reputation_probability=0.0, overridden_by=overridden_by, contributions=tuple(contributions),
+    )
+
+
+def test_an_incident_keeps_the_peak_score_the_worst_action_and_every_piece_of_evidence():
+    """MR23: dò mật khẩu (alert, do luật ép) rồi đăng nhập thành công sau chuỗi sai (step_up) = MỘT sự cố liệt kê đủ bằng chứng."""
+    brute = _risk(32, "alert", [Contribution("brute_force", "dò mật khẩu", 0.10, "rule"), Contribution("ml", "mô hình học máy", 0.05, "ml")], "brute_force")
+    success = _risk(58, "step_up", [Contribution("success_after_failures", "thành công sau chuỗi sai", 0.0, "rule"), Contribution("ml", "mô hình học máy", 0.30, "ml")], "success_after_failures")
+
+    incident = Incident.start(brute, family="Đoán và dò mật khẩu", confidence=0.10, evidence={"brute_force": {"fails": 5}})
+    incident = incident.extend(success, family="Đoán và dò mật khẩu", confidence=0.0, evidence={"success_after_failures": {"fails_before": 5}})
+
+    assert (incident.score, incident.action, incident.overridden_by, incident.occurrences) == (58, "step_up", "success_after_failures", 2)
+    assert [c.source for c in incident.contributions] == ["ml", "brute_force", "success_after_failures"]  # hợp, giảm dần
+    assert dict((c.source, c.weight) for c in incident.contributions)["ml"] == 0.30  # mỗi nguồn giữ trọng số lớn nhất
+    assert incident.evidence == {"brute_force": {"fails": 5}, "success_after_failures": {"fails_before": 5}}
+    assert incident.rule_id == "success_after_failures"
+
+
+def test_a_weaker_later_attempt_never_lowers_the_action_or_steals_the_family():
+    lock = _risk(70, "lock", [Contribution("blocklist_hit", "blocklist", 0.05, "reputation")], "blocklist_hit")
+    weak = _risk(32, "alert", [Contribution("brute_force", "dò mật khẩu", 0.10, "rule")], "brute_force")
+
+    incident = Incident.start(lock, family="Danh tiếng hạ tầng", confidence=0.05, evidence={}).extend(weak, family="Đoán và dò mật khẩu", confidence=0.10, evidence={})
+
+    assert (incident.action, incident.overridden_by, incident.score) == ("lock", "blocklist_hit", 70)
+    assert (incident.family, incident.confidence) == ("Danh tiếng hạ tầng", 0.05)  # họ tấn công của lần thử điểm cao nhất
+    assert incident.rule_id == "blocklist_hit"
+
+
+def test_an_incident_round_trips_through_the_alert_row():
+    from types import SimpleNamespace
+
+    risk = _risk(40, "alert", [Contribution("ml_geo", "mô hình địa lý-thời gian", 0.38, "ml"), Contribution("datacenter_ip", "datacenter", 0.05, "reputation")])
+    incident = Incident.start(risk, family="đăng nhập bất thường", confidence=0.38, evidence={"datacenter_ip": {"ip": "1.2.3.4", "list": "datacenter"}})
+    row = SimpleNamespace(risk_score=incident.score, explanation=incident.explanation(), attack_family=incident.family,
+                          attack_family_confidence=incident.confidence, occurrence_count=incident.occurrences)
+
+    assert Incident.from_alert(row) == incident
+    assert incident.rule_id == "datacenter_ip"  # bằng chứng luật/danh tiếng mạnh nhất khi không luật nào ép
+
+
+def test_an_alert_from_before_mr23_still_reads_as_an_incident():
+    from types import SimpleNamespace
+
+    legacy = SimpleNamespace(risk_score=80, explanation={"legacy_alert_type": "brute_force"}, attack_family=None, attack_family_confidence=None, occurrence_count=1)
+    incident = Incident.from_alert(legacy)
+    assert (incident.score, incident.action, incident.contributions, incident.evidence) == (80, "alert", (), {})
+
+
+def test_rule_evidence_is_stored_json_safe():
+    hit = RuleHit("multi_context_simultaneous", "high", "x", {"countries": ("VN", "US"), "speed": float("inf"), "seen": {"b", "a"}}, "enforce", ())
+    assert evidence_of([hit]) == {"multi_context_simultaneous": {"countries": ["VN", "US"], "speed": None, "seen": ["a", "b"]}}
+    assert json_safe(list(range(50))) == list(range(20))  # danh sách dài bị cắt — cảnh báo không phải nơi lưu nhật ký
+
+
+def test_the_rule_that_forced_the_action_decides_the_family_like_it_decides_rule_id():
+    """MR23: trước đó họ tấn công lấy bằng chứng trọng số cao nhất (hoà nhau thì theo thứ tự sổ đăng ký) trong khi `rule_id`
+    lấy luật đã ép hành động — một lần thử bị khoá vì blocklist có thể mang họ "dò mật khẩu"."""
+    contributions = [Contribution("brute_force", "dò mật khẩu", 0.30, "rule"), Contribution("blocklist_hit", "blocklist", 0.05, "reputation")]
+    forced = RiskResult(
+        score=70, action="lock", probability=0.33, ml_probability=None, rule_probability=0.3, reputation_probability=0.05,
+        overridden_by="blocklist_hit", contributions=tuple(contributions),
+    )
+    assert suggest_attack_family(forced, ml_component=None) == (REGISTRY["blocklist_hit"].category, 0.05)
+    assert suggest_attack_family(_risk_result(contributions), ml_component=None) == (REGISTRY["brute_force"].category, 0.30)  # không ép: như cũ
+
+
+def test_the_representative_rule_comes_from_the_decisive_attempt_not_the_heaviest_weight():
+    """E2E TC1 với mô hình thật: lần đăng nhập được sau chuỗi sai lên `step_up` nhờ ĐIỂM (không luật nào ép) — luật đại
+    diện là luật dẫn đầu của chính lần đó, không phải `brute_force` (trọng số lớn hơn) của các lần sai trước."""
+    brute = _risk(32, "alert", [Contribution("brute_force", "dò mật khẩu", 0.10, "rule")], "brute_force")
+    success = _risk(60, "step_up", [Contribution("ml", "mô hình học máy", 0.60, "ml"), Contribution("success_after_failures", "thành công sau chuỗi sai", 0.0, "rule")])
+
+    incident = Incident.start(brute, family="Đoán và dò mật khẩu", confidence=0.10, evidence={}).extend(success, family="Đoán và dò mật khẩu", confidence=0.0, evidence={})
+
+    assert incident.overridden_by is None and incident.lead_rule == "success_after_failures"
+    assert incident.rule_id == "success_after_failures"
+    assert max((c for c in incident.contributions if c.group != "ml"), key=lambda c: c.weight).source == "brute_force"  # trọng số lớn nhất là luật khác
+
+
+def test_every_family_the_engine_can_suggest_fits_the_database_columns():
+    """SQLite của test không kiểm độ dài VARCHAR, Postgres thì có: họ địa lý-thời gian của MR22 dài 67 ký tự > 64 làm Postgres
+    từ chối ghi cảnh báo (MR22: hỏng cả giao dịch, lần đăng nhập thành công trả lỗi 500) — lộ ra khi đo độ trễ CP4."""
+    from app.models import Alert, Campaign
+
+    families = {GEO_FAMILY, "đăng nhập bất thường (mô hình học máy)", *CATEGORIES, *ML_COMPONENT_FAMILY.values()}
+    limit = min(Alert.__table__.c.attack_family.type.length, Campaign.__table__.c.attack_family.type.length)
+    assert all(len(f) <= limit for f in families), [f for f in families if len(f) > limit]
+    assert max(len(rule_id) for rule_id in REGISTRY) <= Alert.__table__.c.rule_id.type.length

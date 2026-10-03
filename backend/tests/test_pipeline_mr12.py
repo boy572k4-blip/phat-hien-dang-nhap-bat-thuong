@@ -92,10 +92,9 @@ def test_a_blocklisted_ip_deterministically_locks_and_the_pipeline_executes_it(d
     assert result.hybrid_action == "lock" and result.hybrid_risk_score >= lock_at
 
     event = db_session.query(LoginEvent).order_by(LoginEvent.id.desc()).first()
-    assert event.hybrid_risk_score == result.hybrid_risk_score and event.hybrid_action == "lock"
-    assert event.risk_score == event.hybrid_risk_score  # MR21: một điểm rủi ro duy nhất cho mỗi lần đăng nhập
+    assert event.hybrid_risk_score == result.hybrid_risk_score and event.hybrid_action == "lock"  # điểm duy nhất của lần thử (MR21/MR23)
 
-    hybrid_alert = db_session.query(Alert).filter(Alert.alert_type == "hybrid_risk").order_by(Alert.id.desc()).first()
+    hybrid_alert = db_session.query(Alert).order_by(Alert.id.desc()).first()
     assert hybrid_alert is not None and hybrid_alert.rule_id == "blocklist_hit" and hybrid_alert.status == "open"
     assert hybrid_alert.explanation is not None and any(c["source"] == "blocklist_hit" for c in hybrid_alert.explanation["contributions"])
     assert hybrid_alert.explanation["forced_by"] == "blocklist_hit"  # MR21: ghi rõ luật nào ép hành động
@@ -130,9 +129,9 @@ def test_a_broken_rule_block_still_records_every_login_and_answers_the_request(c
         assert response.status_code == 401
 
     assert db_session.query(LoginEvent).count() == 6
-    assert db_session.query(Alert).filter(Alert.alert_type == "hybrid_risk").count() == 0  # khối hỏng: không có alert nào từ đó
+    assert db_session.query(Alert).count() == 0  # khối hỏng: không có alert nào từ đó
     last_event = db_session.query(LoginEvent).order_by(LoginEvent.id.desc()).first()
-    assert last_event.hybrid_risk_score is None and last_event.hybrid_action is None and last_event.risk_score is None
+    assert last_event.hybrid_risk_score is None and last_event.hybrid_action is None
 
 
 def test_ml_component_degrades_gracefully_when_the_engine_has_no_model_loaded(client, db_session, monkeypatch):

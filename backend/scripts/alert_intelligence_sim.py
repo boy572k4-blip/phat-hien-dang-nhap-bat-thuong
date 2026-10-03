@@ -210,7 +210,7 @@ def _collect(session_factory) -> tuple[int, list[str | None]]:
     db = session_factory()
     try:
         raw_incidents = db.query(LoginEvent).filter(LoginEvent.hybrid_action != "allow").count()
-        families = [a.attack_family for a in db.query(Alert).filter(Alert.alert_type == "hybrid_risk").all()]
+        families = [a.attack_family for a in db.query(Alert).all()]
         return raw_incidents, families
     finally:
         db.close()

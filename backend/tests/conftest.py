@@ -14,6 +14,36 @@ from app.database import Base, get_db
 from app.main import app
 
 
+class _DevRedisForbidden:
+    """Thay cho client Redis dev thật trong suốt phiên test — mọi lời gọi đều lỗi rõ ràng."""
+
+    def __getattr__(self, name):
+        raise RuntimeError("Test đang gọi Redis dev THẬT (app.detection.rate_counter.redis_client) — phải dùng fixture fake_redis")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def never_touch_dev_services():
+    """Lưới an toàn (MR23): fixture `db_session`/`fake_redis` chuyển pipeline sang SQLite/fakeredis bằng monkeypatch THEO
+    TỪNG TEST — một test gọi `monkeypatch.undo()` giữa chừng (hoặc quên dùng fixture) sẽ âm thầm rơi về Postgres/Redis DEV
+    THẬT. Đã xảy ra khi viết test MR23: một lần đăng nhập giả ghi vào DB dev và sửa một cảnh báo có sẵn (đã khôi phục từ
+    bản sao lưu). Từ đây: engine Postgres thật từ chối mọi kết nối, client Redis thật bị thay bằng đối tượng báo lỗi —
+    rơi về dịch vụ thật thì test FAIL ngay thay vì ghi dữ liệu."""
+    from sqlalchemy import event
+
+    import app.detection.rate_counter as rate_counter
+    from app.database import engine as dev_engine
+
+    def refuse_connection(*args, **kwargs):
+        raise RuntimeError("Test đang kết nối Postgres dev THẬT (app.database.engine) — phải dùng SQLite của fixture db_session")
+
+    event.listen(dev_engine, "do_connect", refuse_connection)
+    real_redis = rate_counter.redis_client
+    rate_counter.redis_client = _DevRedisForbidden()
+    yield
+    rate_counter.redis_client = real_redis
+    event.remove(dev_engine, "do_connect", refuse_connection)
+
+
 @pytest.fixture(autouse=True)
 def fake_redis(monkeypatch):
     """Thay redis_client thật bằng fakeredis cho MỌI test — brute force,

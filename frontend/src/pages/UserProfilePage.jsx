@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { apiClient } from "../services/api";
+import { actionLabel, alertTitle, incidentAction } from "../services/risk";
 import "./UserProfilePage.css";
 
 // MR17 "Dashboard v2" — checklist "hồ sơ rủi ro theo user (timeline, alert, thiết bị/quốc gia quen)". Gộp dữ liệu đã
@@ -99,7 +100,7 @@ export default function UserProfilePage() {
             {profile.alerts.map((a) => (
               <li key={a.id} className={`user-profile-list--severity-${a.severity}`}>
                 <span className="user-profile-list__title">
-                  {a.alert_type} ({a.severity}, {a.risk_score}đ)
+                  {alertTitle(a)} ({incidentAction(a) ? actionLabel(incidentAction(a)) : a.severity}, {a.risk_score}đ)
                 </span>
                 <span className="user-profile-list__meta">{a.message}</span>
               </li>
@@ -118,7 +119,8 @@ export default function UserProfilePage() {
               <tr>
                 <th>Thời gian</th>
                 <th>Kết quả</th>
-                <th>Risk</th>
+                <th>Điểm</th>
+                <th>Hành động</th>
                 <th>Vị trí</th>
                 <th>Thiết bị</th>
               </tr>
@@ -128,7 +130,8 @@ export default function UserProfilePage() {
                 <tr key={e.id}>
                   <td>{new Date(e.created_at).toLocaleString("vi-VN")}</td>
                   <td>{e.success ? "✅" : "❌"}</td>
-                  <td>{e.hybrid_risk_score ?? e.risk_score ?? "-"}</td>
+                  <td>{e.hybrid_risk_score ?? "-"}</td>
+                  <td>{actionLabel(e.hybrid_action)}</td>
                   <td>{e.city ? `${e.city}, ${e.country}` : e.country ?? "-"}</td>
                   <td>{e.device_type ?? "-"}</td>
                 </tr>

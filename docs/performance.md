@@ -215,7 +215,18 @@ Log server bản sau MR20 không có lỗi nào trong toàn bộ lượt đo.
 - Truy vấn ASN 24 giờ đi qua chỉ mục chỉ có cột `asn` — với nhà mạng chiếm phần lớn lưu lượng, một chỉ mục `(asn, created_at)`
   sẽ biến nó thành quét theo khoảng thời gian. Chưa thêm (chưa cần ở quy mô hiện tại, cần migration).
 - Lỗi DB bên trong các khối `try/except` "cô lập" của pipeline (MR12, MR14) làm hỏng cả giao dịch trên Postgres, nên lần
-  commit cuối vẫn lỗi — "cô lập" hiện chỉ đúng với lỗi Python. Ghi cho MR23 (viết lại pipeline: mỗi khối một SAVEPOINT).
+  commit cuối vẫn lỗi — "cô lập" hiện chỉ đúng với lỗi Python. **Đã sửa ở MR23**: mỗi khối một SAVEPOINT.
 - **Phát hiện bảo mật (chưa sửa, đề xuất đưa vào MR32):** `/login` không chạy bcrypt khi tên đăng nhập không tồn tại, nên
   thời gian phản hồi (~vài ms so với ~230 ms) để lộ tài khoản nào có thật — dù thông báo lỗi đã giống hệt nhau.
-- Benchmark tạo tài khoản `bench_*` trong DB dev ở mỗi lần chạy và không tự xoá (tên được in ra để tra lại log).
+- Benchmark tạo tài khoản `bench_*` trong DB dev ở mỗi lần chạy và không tự xoá (tên được in ra để tra lại log). Dữ liệu
+  benchmark của MR20 (24 tài khoản `bench_*`, 1.150 lần đăng nhập của `alice`) đã xoá khỏi DB dev ngày 03/10/2026 theo yêu
+  cầu của chủ dự án; đo ở MR23 dùng bản sao DB tạm và rollback (dưới).
+
+## MR23 — đo lại sau khi viết lại pipeline (03/10/2026)
+
+Đo **trong tiến trình** thời gian chạy `_run_detection_pipeline_sync` cho MR22 và MR23 trên CÙNG một bản sao DB dev (khôi phục từ
+bản sao lưu vào cơ sở dữ liệu tạm, mọi thay đổi rollback, Redis db riêng), 30 lần mỗi khối lượng, hai lượt xen kẽ — bảng đầy
+đủ ở [`incident-unification.md`](incident-unification.md) mục 4. Chênh lệch giữa hai phiên bản trong cùng lượt 0–15 ms, nhỏ
+hơn dao động giữa hai lượt (~12 ms ở cả hai phiên bản): **không đo được thay đổi độ trễ**. Trung vị ~100–120 ms mỗi lần (cao hơn
+~79–104 ms đo ở MR20 trên DB khi đó chứa thêm/khác dữ liệu benchmark — không so trực tiếp hai đợt đo khác bộ dữ liệu).
+Khi đo trên Postgres lộ ra lỗi của MR22: tên họ tấn công 67 ký tự > cột 64 (đã sửa ở MR23).

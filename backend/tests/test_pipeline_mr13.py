@@ -68,7 +68,7 @@ def test_a_burst_from_a_blocklisted_ip_is_deduped_into_one_alert_not_five(db_ses
     events = db_session.query(LoginEvent).order_by(LoginEvent.id).all()
     assert len(events) == 5 and all(e.hybrid_action == "lock" for e in events)  # blocklist_hit ghi đè MỌI lần, không phụ thuộc hiệu chỉnh
 
-    alerts = db_session.query(Alert).filter(Alert.alert_type == "hybrid_risk").all()
+    alerts = db_session.query(Alert).all()
     assert len(alerts) == 1, "5 lần cùng khớp blocklist_hit trong 15 phút phải GỘP thành 1 alert, không phải 5 (đúng mục tiêu 'giảm số cảnh báo' của MR13)"
 
     alert = alerts[0]
@@ -79,7 +79,7 @@ def test_a_burst_from_a_blocklisted_ip_is_deduped_into_one_alert_not_five(db_ses
     # BASE của kịch bản) đến từ hai "đồng hồ" khác nhau — so `last_seen_at` với chính mốc thời gian kịch bản, không
     # phải với created_at (cùng bẫy đã ghi nhận ở MR12: "test boundary bug, không phải lỗi module").
     assert ensure_utc(alert.last_seen_at) == BASE + timedelta(seconds=4 * 30)
-    assert "Đã lặp lại 5 lần" in alert.message
+    assert "Sự cố gồm 5 lần thử" in alert.message
 
     # "action" không đổi (lock -> lock không phải leo thang) mỗi lần trùng -> chỉ 1 response_action/audit_log, không phải 5.
     assert db_session.query(ResponseAction).count() == 1
@@ -102,7 +102,7 @@ def test_two_blocklist_hits_a_fake_day_apart_are_not_incorrectly_deduped_into_on
     _run(username="alice", user_id=user.id, success=True, ip=GOOGLE_DNS, ts=BASE)
     _run(username="alice", user_id=user.id, success=True, ip=GOOGLE_DNS, ts=BASE + timedelta(days=1))
 
-    alerts = db_session.query(Alert).filter(Alert.alert_type == "hybrid_risk").order_by(Alert.id).all()
+    alerts = db_session.query(Alert).order_by(Alert.id).all()
     assert len(alerts) == 2, "cách nhau 1 ngày (giờ đăng nhập) phải là 2 alert riêng, không phải gộp thành 1 chỉ vì được GHI vào DB gần nhau về giờ thật"
     assert alerts[0].occurrence_count == 1 and alerts[1].occurrence_count == 1
 
@@ -116,7 +116,7 @@ def test_dedup_still_groups_by_ip_when_the_username_does_not_exist(db_session):
     for i, name in enumerate(["ghost1", "ghost2", "ghost3"]):
         _run(username=name, user_id=None, success=False, ip=GOOGLE_DNS, ts=BASE + timedelta(seconds=i * 10))
 
-    alerts = db_session.query(Alert).filter(Alert.alert_type == "hybrid_risk").all()
+    alerts = db_session.query(Alert).all()
     assert len(alerts) == 1 and alerts[0].occurrence_count == 3 and alerts[0].user_id is None
 
 
@@ -128,7 +128,7 @@ def test_a_login_from_a_new_country_mentions_it_by_name_in_the_message_with_the_
 
     _run(username="alice", user_id=user.id, success=True, ip=GOOGLE_DNS, ts=BASE)
 
-    alert = db_session.query(Alert).filter(Alert.alert_type == "hybrid_risk").one()
+    alert = db_session.query(Alert).one()
     assert "Lần đầu quốc gia này (US), trước đó dùng VN 10 lần." in alert.message
 
 

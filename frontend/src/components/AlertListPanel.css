@@ -103,3 +103,23 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* MR23: bằng chứng của cả sự cố — gọn lại mặc định, mở ra khi cần xem đủ */
+.alert-list__evidence {
+  margin-top: 0.3rem;
+  font-size: 0.76rem;
+}
+
+.alert-list__evidence summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.alert-list__evidence ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.alert-list__evidence-group {
+  color: var(--text-muted);
+}

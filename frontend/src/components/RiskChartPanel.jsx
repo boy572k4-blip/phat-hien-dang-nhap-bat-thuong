@@ -3,11 +3,20 @@ import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Too
 
 import { apiClient } from "../services/api";
 
-// Khu vực biểu đồ risk score theo thời gian (nhiệm vụ 4.3) — nối dữ liệu
+// Khu vực biểu đồ điểm rủi ro theo thời gian (nhiệm vụ 4.3) — nối dữ liệu
 // thật từ GET /login-events (lấy 100 bản ghi gần nhất, vẽ theo thời gian).
 // `refreshKey` tăng lên khi có cảnh báo mới qua WebSocket (nhiệm vụ 5.3).
+// MR23: vẽ điểm DUY NHẤT của mỗi lần thử (hybrid risk engine) — trước đó biểu đồ vẽ điểm cộng tay của tầng 2 trong khi
+// cảnh báo dùng điểm hybrid — và kẻ đúng ngưỡng hành động đang dùng (`action_bands` của API) thay vì 40/70 cố định.
+const BAND_LINES = [
+  { key: "alert_at", label: "cảnh báo", color: "#e0a800" },
+  { key: "step_up_at", label: "xác thực thêm", color: "#e8590c" },
+  { key: "lock_at", label: "khoá", color: "#d9363e" },
+];
+
 export default function RiskChartPanel({ refreshKey = 0 }) {
   const [points, setPoints] = useState(null);
+  const [bands, setBands] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -18,10 +27,11 @@ export default function RiskChartPanel({ refreshKey = 0 }) {
       .then((res) => {
         if (cancelled) return;
         const items = [...res.data.items].reverse(); // đảo lại thành thứ tự thời gian tăng dần
+        setBands(res.data.action_bands);
         setPoints(
           items.map((event) => ({
             time: new Date(event.created_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
-            risk_score: event.risk_score ?? 0,
+            score: event.hybrid_risk_score, // null: lần thử cũ hơn MR12 hoặc khối chấm điểm lỗi — để trống, không vẽ thành 0
           }))
         );
       })
@@ -35,8 +45,8 @@ export default function RiskChartPanel({ refreshKey = 0 }) {
   }, [refreshKey]);
 
   return (
-    <section className="dashboard-panel" aria-label="Biểu đồ risk score">
-      <h2>Biểu đồ risk score</h2>
+    <section className="dashboard-panel" aria-label="Biểu đồ điểm rủi ro">
+      <h2>Biểu đồ điểm rủi ro</h2>
       <div className="dashboard-panel__body">
         {error && <p className="dashboard-panel__placeholder">{error}</p>}
         {!error && points === null && (
@@ -54,11 +64,18 @@ export default function RiskChartPanel({ refreshKey = 0 }) {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="time" tick={{ fontSize: 10 }} minTickGap={20} />
               <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-              <Tooltip />
-              {/* Ngưỡng phân loại risk score — nhiệm vụ 4.2 */}
-              <ReferenceLine y={40} stroke="#e0a800" strokeDasharray="4 4" />
-              <ReferenceLine y={70} stroke="#d9363e" strokeDasharray="4 4" />
-              <Line type="monotone" dataKey="risk_score" stroke="#4C72B0" dot={false} strokeWidth={2} />
+              <Tooltip formatter={(value) => [value, "điểm"]} />
+              {bands &&
+                BAND_LINES.map(({ key, label, color }) => (
+                  <ReferenceLine
+                    key={key}
+                    y={bands[key]}
+                    stroke={color}
+                    strokeDasharray="4 4"
+                    label={{ value: `${label} ${bands[key]}`, position: "insideTopRight", fontSize: 9, fill: color }}
+                  />
+                ))}
+              <Line type="monotone" dataKey="score" stroke="#4C72B0" dot={false} strokeWidth={2} connectNulls={false} />
             </LineChart>
           </ResponsiveContainer>
         )}

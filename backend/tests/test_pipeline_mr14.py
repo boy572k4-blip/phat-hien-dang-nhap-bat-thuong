@@ -2,11 +2,8 @@
 (IP/ASN) trong 24h được gộp vào CÙNG một `Campaign`, khác chống trùng lặp CÙNG một tài khoản của MR13. Đo trên diện
 rộng (141 ATO thật của RBA): ml/rba/campaign_correlation_eval.py — file này chỉ kiểm chứng CƠ CHẾ.
 
-⚠️ Tài khoản MỚI (chưa có baseline) có thể tự kích thêm alert `ml_anomaly` (tầng 3 cũ, Tuần 7 — coi tài khoản mới là
-bất thường, không liên quan MR14) CÙNG lúc với alert `hybrid_risk` do blocklist sinh ra; alert đó CŨNG được gán vào
-cùng chiến dịch (đúng thiết kế: cùng một login_event/hạ tầng thì cùng chiến dịch, không phân biệt tầng nào sinh ra
-alert) — vì vậy các test dưới đây lọc theo `alert_type == "hybrid_risk"` khi cần đếm CHÍNH XÁC, thay vì đếm TỔNG số
-alert (phụ thuộc hành vi ngẫu nhiên của tầng 3 cũ, không phải trọng tâm của MR14)."""
+Trước MR22 tài khoản MỚI có thể tự kích thêm alert `ml_anomaly` (tầng 3) nên các test này từng lọc theo loại cảnh báo;
+từ MR23 chỉ còn một loại (sự cố của hybrid risk engine), đếm thẳng mọi cảnh báo."""
 
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -34,7 +31,7 @@ def _run(*, username, user_id, success, ip, ts, user_agent=CHROME_UA):
 
 
 def _hybrid_alerts(db_session):
-    return db_session.query(Alert).filter(Alert.alert_type == "hybrid_risk").order_by(Alert.id).all()
+    return db_session.query(Alert).order_by(Alert.id).all()
 
 
 def test_two_different_accounts_hit_from_the_same_ip_join_the_same_campaign(db_session):

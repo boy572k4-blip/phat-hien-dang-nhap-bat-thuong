@@ -43,7 +43,7 @@ def _login(username, user_id, *, success, minutes=0.0, ip=ATTACKER_IP):
 
 
 def _hybrid_alerts(db):
-    return db.query(Alert).filter(Alert.alert_type == "hybrid_risk").all()
+    return db.query(Alert).all()
 
 
 # -------------------------------------------------------------------------- dò mật khẩu (tầng 1 brute_force + tầng 2 "+40")
@@ -57,8 +57,7 @@ def test_five_failures_in_five_minutes_alert_through_the_brute_force_min_action(
     (alert,) = _hybrid_alerts(db_session)
     assert alert.rule_id == "brute_force" and alert.explanation["forced_by"] == "brute_force"
     assert alert.risk_score == _bands().alert_at  # bằng chứng 5% -> điểm hiển thị nâng lên đúng ngưỡng cảnh báo
-    assert "hành động tối thiểu" in alert.message
-    assert {a.alert_type for a in db_session.query(Alert).all()} == {"hybrid_risk"}  # không còn alert tầng 1/tầng 2 riêng
+    assert "hành động tối thiểu" in alert.message  # một cảnh báo duy nhất: không còn alert tầng 1/tầng 2 riêng
 
 
 def test_the_same_failures_spread_over_half_an_hour_stay_below_the_five_minute_window(db_session):
@@ -118,22 +117,29 @@ def test_hanoi_then_the_us_five_minutes_later_alerts_and_carries_both_points_for
     result = _login("alice", user.id, success=True, minutes=5, ip=GOOGLE_US_IP)
     assert result.hybrid_action in ("alert", "step_up", "lock")
 
-    alerts = _hybrid_alerts(db_session)
-    assert [a.rule_id for a in alerts] == ["impossible_travel"]
-    payload = next(p for p in result.alert_payloads if p["alert_type"] == "hybrid_risk")
-    hanoi = lookup_ip(HANOI_FPT_IP)
-    assert (payload["previous_latitude"], payload["previous_longitude"]) == (hanoi.latitude, hanoi.longitude)  # bản đồ vẽ được đường nối
+    (alert,) = _hybrid_alerts(db_session)
+    assert alert.rule_id == "impossible_travel"
+    # MR23: hai đầu đường bay nằm trong bằng chứng ĐÃ LƯU của cảnh báo (bản đồ vẽ lại được sau khi tải lại trang), payload
+    # WebSocket mang đúng bằng chứng đó.
+    hanoi, us = lookup_ip(HANOI_FPT_IP), lookup_ip(GOOGLE_US_IP)
+    travel = alert.explanation["evidence"]["impossible_travel"]
+    assert (travel["previous_latitude"], travel["previous_longitude"]) == (hanoi.latitude, hanoi.longitude)
+    assert (travel["latitude"], travel["longitude"]) == (us.latitude, us.longitude)
+    (payload,) = result.alert_payloads
+    assert payload["explanation"]["evidence"]["impossible_travel"] == travel
 
 
 # -------------------------------------------------------------------------- một điểm rủi ro, tầng 3
 
 
-def test_every_login_carries_one_score_in_both_score_columns(db_session):
+def test_every_login_carries_exactly_one_score_and_one_action(db_session):
+    """MR23: hai cột điểm song song cũ (`risk_score` của tầng 2, `ml_anomaly_score` của tầng 3) đã xoá khỏi schema."""
     user = _user(db_session)
     _login("alice", user.id, success=True)
     _login("ghost", None, success=False, minutes=1)
     events = db_session.query(LoginEvent).all()
-    assert len(events) == 2 and all(e.risk_score is not None and e.risk_score == e.hybrid_risk_score for e in events)
+    assert len(events) == 2 and all(e.hybrid_risk_score is not None and e.hybrid_action is not None for e in events)
+    assert not hasattr(LoginEvent, "risk_score") and not hasattr(LoginEvent, "ml_anomaly_score")
 
 
 # Test "alert ml_anomaly mang điểm của chính lần đăng nhập" đã bỏ ở MR22: tầng 3 không còn alert riêng, giờ là nguồn

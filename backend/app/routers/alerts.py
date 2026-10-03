@@ -74,7 +74,7 @@ def submit_alert_feedback(
             action="feedback_correct" if payload.correct else "feedback_false_positive",
             target_type="alert",
             target_id=alert.id,
-            detail={"note": payload.note, "user_id": alert.user_id, "alert_type": alert.alert_type},
+            detail={"note": payload.note, "user_id": alert.user_id, "rule_id": alert.rule_id, "attack_family": alert.attack_family},
         )
     )
     db.commit()

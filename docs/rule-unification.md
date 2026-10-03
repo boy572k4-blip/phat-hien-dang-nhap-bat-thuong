@@ -100,7 +100,7 @@ thật** (DB cô lập, mô hình `hybrid_cp2` thật), trước và sau MR21. "
 - Ba kịch bản trước đây chỉ có cảnh báo tầng 1 trong khi hybrid nói "cho qua" (`allow`) — botnet phân tán, xoay User-Agent,
   nhịp đều như máy — giờ có hành động `alert` thật: trước MR21 hai hệ thống đưa ra hai kết luận trái nhau cho cùng một lần thử.
 - Số cảnh báo không tính `ml_anomaly` trên 17 kịch bản: **44 → 15** (gộp: dò mật khẩu 5 lần sai trước đây ra 5 alert tầng 1 +
-  5 alert tầng 2, giờ ra 1 alert hybrid nhờ chống trùng lặp MR13). MR23 tiếp tục mục tiêu "một sự cố = một cảnh báo".
+  5 alert tầng 2, giờ ra 1 alert hybrid nhờ chống trùng lặp MR13). MR23 hoàn tất mục tiêu "một sự cố = một cảnh báo" ([`incident-unification.md`](incident-unification.md)).
 - Các khoảng trống đã biết **vẫn còn**, không đổi: dò danh sách tài khoản, bot UA, Tor/datacenter/VPN, thử từ nhiều quốc gia
   không có cảnh báo (trọng số 0–5%, không có hành động tối thiểu) — MR25 (mức hành động có số đo báo nhầm) và MR27–MR30.
 
@@ -115,7 +115,7 @@ thật** (DB cô lập, mô hình `hybrid_cp2` thật), trước và sau MR21. "
 - **Điểm hiển thị của `blocklist_hit`** đổi từ 100 (ghi đè cũ) thành ngưỡng `lock_at` của hồ sơ đang dùng; hành động vẫn là `lock`.
 - **Một điểm rủi ro cho mỗi lần đăng nhập:** cột `login_events.risk_score` (trước là điểm cộng tay của tầng 2) giờ chứa đúng
   điểm hybrid, cảnh báo `ml_anomaly` cũng mang điểm đó — bảng log và biểu đồ hiện có tiếp tục hoạt động. Mức low/medium/high
-  của bộ lọc nhật ký vẫn là 40/70 (Tuần 4); MR23 gộp hẳn hai cột và đồng bộ các mức với ngưỡng hành động của hybrid.
+  của bộ lọc nhật ký vẫn là 40/70 (Tuần 4); MR23 đã xoá cột điểm cũ và lọc theo hành động (allow/alert/step_up/lock) thay cho các mức đó, xem [`incident-unification.md`](incident-unification.md); ngưỡng hành động của hybrid.
 - Mức hành động tối thiểu là tạm thời, chưa có số đo báo nhầm (MR24–MR25).
 
 ## 5. Kiểm thử

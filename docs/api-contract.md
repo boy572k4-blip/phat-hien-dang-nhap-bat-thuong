@@ -22,7 +22,7 @@ Web app mẫu (React)                Attack-sim scripts
                     Detection engine
               (rule-based → behavioral → ML)
                              │
-                    risk_score + alerts
+      một điểm rủi ro + một cảnh báo/sự cố (MR23)
                              │
                     WebSocket (JWT) ──────▶ Dashboard (React)
                              │
@@ -50,8 +50,8 @@ Web app mẫu (React)                Attack-sim scripts
 | `GET /health` | 1 | Kiểm tra service + kết nối DB |
 | `POST /login` | 2 | Đăng nhập web app mẫu, ghi `login_events` |
 | `POST /admin/login` | 5 | Đăng nhập admin (bảng `admins` riêng), trả JWT (`jwt_expire_minutes` = 60) |
-| `GET /login-events` | 4→5→8 | Danh sách log, phân trang + lọc (`username`, `success`, `risk_level`, `is_synthetic` — nâng cấp sau Tuần 7). **Có JWT bắt buộc từ Tuần 5** |
-| `GET /alerts` | 4→5→13→17 | Danh sách cảnh báo, phân trang, mặc định sắp theo ưu tiên (`?sort=priority`\|`recent`, MR13); lọc `?attack_family=`\|`rule_id=`\|`campaign_id=`\|`status=` (MR17). **Có JWT bắt buộc từ Tuần 5** |
+| `GET /login-events` | 4→5→8→23 | Danh sách log, phân trang + lọc (`username`, `success`, `is_synthetic` — nâng cấp sau Tuần 7; `action` = allow\|alert\|step_up\|lock thay `risk_level` từ MR23). Mỗi lần thử MỘT điểm (`hybrid_risk_score`) và MỘT hành động (`hybrid_action`); phản hồi kèm `action_bands` (ngưỡng đang dùng). **Có JWT bắt buộc từ Tuần 5** |
+| `GET /alerts` | 4→5→13→17→23 | Danh sách cảnh báo, phân trang, mặc định sắp theo ưu tiên (`?sort=priority`\|`recent`, MR13); lọc `?attack_family=`\|`rule_id=`\|`campaign_id=`\|`status=` (MR17). MR23: một cảnh báo = một sự cố, không còn `alert_type`; `explanation` liệt kê mọi bằng chứng. **Có JWT bắt buộc từ Tuần 5** |
 | `GET /campaigns` | 14 | Danh sách chiến dịch (nhiều tài khoản chung hạ tầng), phân trang, lọc `?status=`. **Có JWT bắt buộc từ Tuần 5** |
 | `GET /campaigns/{id}` | 14 | Chi tiết một chiến dịch: timeline, tài khoản bị nhắm, đồ thị liên kết user-IP-ASN-thiết bị. **Có JWT bắt buộc từ Tuần 5** |
 | `POST /alerts/{id}/feedback` | 15 | "Đúng"/"Báo nhầm" (`{correct, note?}`) — ghi `alerts.status`/`feedback` + `audit_log`; ngưỡng thích nghi tính lại ĐỊNH KỲ, không phải ngay lúc gọi. **Có JWT bắt buộc từ Tuần 5** |

@@ -137,6 +137,13 @@ tài khoản trong kịch bản là "lạ" — caveat "`ml_anomaly` gần như l
 Tổng hợp 25 hành vi: **vững 10** (không đổi), **phụ thuộc hoàn cảnh 7** (+1: proxy cùng nước), **không cảnh báo 7** (dò danh
 sách tài khoản, bot UA, Tor, datacenter, VPN, thử từ nhiều quốc gia, đăng nhập dồn dập), **mơ hồ có chủ đích 1**.
 
+## Cập nhật sau MR23: một sự cố = một cảnh báo
+
+MR23 không đổi cơ chế phát hiện nào: trên 20 kịch bản, bước phát hiện đầu tiên và hành động nặng nhất **giống hệt** MR22; số
+cảnh báo 44 → 40 (mọi tấn công vào một tài khoản giờ đúng một cảnh báo liệt kê đủ bằng chứng — botnet phân tán 3 → 1, xoay
+User-Agent 2 → 1). Tổng hợp giữ nguyên: **vững 10**, phụ thuộc hoàn cảnh 7, không cảnh báo 7, mơ hồ 1
+([`incident-unification.md`](incident-unification.md)).
+
 ## Nguồn dữ liệu
 
 Mọi con số trong bảng lấy TRỰC TIẾP từ tài liệu đã dẫn — không tính lại riêng cho bảng này. `[Đo được thật]` nghĩa là

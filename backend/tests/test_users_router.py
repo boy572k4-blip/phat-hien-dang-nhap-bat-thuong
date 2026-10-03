@@ -38,7 +38,7 @@ def test_assembles_timeline_alerts_devices_locations_and_risk_profile(client, db
     event = LoginEvent(user_id=user.id, attempted_username="alice", success=True, ip_address="1.1.1.1", created_at=BASE)
     db_session.add(event)
     db_session.flush()
-    db_session.add(Alert(login_event_id=event.id, user_id=user.id, alert_type="hybrid_risk", severity="high", risk_score=80, message="test"))
+    db_session.add(Alert(login_event_id=event.id, user_id=user.id, severity="high", risk_score=80, message="test"))
     db_session.add(KnownDevice(user_id=user.id, device_fingerprint="fp1", user_agent="Chrome", first_seen_at=BASE, last_seen_at=BASE))
     db_session.add(KnownLocation(user_id=user.id, country="VN", city="Hanoi", first_seen_at=BASE, last_seen_at=BASE))
     db_session.add(UserRiskProfile(user_id=user.id, threshold_delta=8.0, feedback_count=3, false_positive_count=2))

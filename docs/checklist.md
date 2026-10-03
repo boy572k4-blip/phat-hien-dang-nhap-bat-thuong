@@ -476,18 +476,38 @@ Các mục dưới đây đổi mô hình hoặc quy tắc nên cần đồng ý
     tầng 3 vẫn chấm cả lần thử sai như trước dù chỉ học trên lần thành công (chưa đo riêng); phép đối chứng có/không 2 kiểu MR18
     trên cùng seed giờ làm được nhưng chưa chạy
   - Xong khi: recall các kiểu địa lý-thời gian giữ nguyên hoặc ghi rõ thay đổi; kịch bản tài khoản mới hợp lệ không bị báo
-- [ ] **MR23 [Lõi, M] Một sự cố = một cảnh báo, một điểm rủi ro** (đầu tuần 2)
-  - [ ] Viết lại `pipeline.py` (538 dòng) theo 5 bước: ngữ cảnh → luật → ML → gộp điểm → hành động/cảnh báo. Chống trùng lặp
-    MR13 áp dụng cho MỌI bằng chứng (hiện chỉ cho `hybrid_risk`)
-  - [ ] Migration: ngừng ghi hoặc xoá `login_events.risk_score`, `ml_anomaly_score`; thống nhất `alert_type`; bằng chứng
-    impossible travel vẫn mang toạ độ trước/sau
-  - [ ] Frontend: bảng log và biểu đồ dùng một điểm (`RiskChartPanel` hiện vẽ điểm tầng 2 trong khi cảnh báo dùng điểm hybrid);
-    danh sách cảnh báo hiện họ tấn công + toàn bộ bằng chứng; `MapPanel` đọc toạ độ từ bằng chứng mới (hiện dựa vào
-    `alert_type === "impossible_travel"`)
-  - [ ] Sửa 23 test pipeline MR12–MR15 theo luồng mới
+- [x] **MR23 [Lõi, M] Một sự cố = một cảnh báo, một điểm rủi ro** (đầu tuần 2) — chi tiết và số đo:
+  [`incident-unification.md`](incident-unification.md)
+  - [x] Viết lại `pipeline.py` theo 5 bước (ghi lần thử + ngữ cảnh → luật → mô hình → gộp điểm → sự cố/phản ứng/chiến dịch),
+    mỗi khối một SAVEPOINT (nợ từ MR20: lỗi DB trong khối "cô lập" làm hỏng cả giao dịch Postgres); hồ sơ tài khoản cập nhật
+    sau khi chấm. Chống trùng lặp thành **sự cố** (`alert_intelligence.Incident`): cùng tài khoản (hoặc IP nếu tên không tồn
+    tại), không còn theo họ tấn công, cửa sổ 15 phút **trượt** và chặn hai phía; cảnh báo giữ đỉnh điểm, hành động nặng nhất,
+    hợp mọi bằng chứng + chi tiết từng luật; họ và `rule_id` theo lần thử quyết định (luật đã ép hành động được ưu tiên)
+  - [x] Migration `7d2c1e5a9b30`: xoá `login_events.risk_score`, `ml_anomaly_score`, `alerts.alert_type` (loại cũ giữ trong
+    `explanation.legacy_alert_type`, 2.239 cảnh báo dev); chỉ mục sự cố mới. Chạy trên Postgres dev sau khi sao lưu, kiểm hai
+    chiều: hạ cấp xong bảng `alerts` trùng từng byte với bản sao lưu. Bằng chứng di chuyển bất khả thi lưu cả hai đầu đường bay
+  - [x] Frontend: bảng log/biểu đồ một điểm, biểu đồ kẻ đúng ngưỡng hành động từ API (`action_bands`), lọc theo hành động;
+    danh sách cảnh báo hiện họ tấn công, hành động, số lần thử và toàn bộ bằng chứng, cập nhật real-time thay đúng hàng của sự
+    cố; bản đồ đọc đường bay từ bằng chứng đã lưu (vẽ lại được sau khi tải lại trang). Kiểm tra trên trình duyệt với bản sao
+    DB tạm (đã xoá)
+  - [x] Sửa 23 test pipeline MR12–MR15 + test router/feedback theo luồng mới; thêm `test_pipeline_mr23.py` và test `Incident`
+  - **Kết quả**: E2E TC1 = **1** cảnh báo liệt kê đủ bằng chứng (`success_after_failures`, step_up) — kiểm qua pipeline thật
+    trên DB cô lập (kịch bản `tc1_like` dùng chính `user020`) và test; E2E trình duyệt với `user020` trên DB dev vẫn để MR34
+    (tránh tự khoá tài khoản demo); 20 kịch bản: bước phát
+    hiện và hành động nặng nhất **giống hệt** MR22, cảnh báo 44 → 40 (mọi tấn công vào một tài khoản = 1 cảnh báo); hành vi
+    vững vẫn 10/25; độ trễ pipeline không đổi đo được (chênh 0–15 ms trong biên dao động giữa hai lượt đo)
+  - ⚠️ Lỗi thật tìm ra (đã sửa, có test): (1) đặc trưng `minutes_since_last_login` của mọi lần đăng nhập thành công trên luồng
+    thật = 0 từ Tuần 7 (lệch train/serve; test so khớp đặc trưng thật với lúc train); (2) tên họ tấn công của MR22 dài 67 ký
+    tự > cột 64 — Postgres từ chối ghi cảnh báo, lần đăng nhập thành công trả 500 (SQLite trong test không kiểm độ dài); (3)
+    cửa sổ sự cố thiếu chặn trên; (4) họ tấn công và `rule_id` có thể mâu thuẫn (từ MR21); (5) một test MR23 gọi
+    `monkeypatch.undo()` đã ghi vào DB/Redis dev thật — đã khôi phục từ bản sao lưu, thêm lưới an toàn chặn mọi test chạm dịch
+    vụ dev (lộ thêm `test_health` gọi Postgres dev từ Tuần 1)
+  - ⚠️ Còn lại: hai lần thử đồng thời của một sự cố mới có thể tạo hai cảnh báo (không khoá hàng); cửa sổ 15 phút vẫn tự chọn;
+    chưa có kịch bản đo riêng ảnh hưởng của lỗi (1) lên tài khoản "im lặng lâu ngày"
   - Xong khi: tấn công `user020` (E2E TC1) ra đúng 1 cảnh báo, liệt kê đủ bằng chứng; bản đồ vẫn vẽ đường bay; toàn bộ test và
     kịch bản qua
 - [ ] **CP4 — sau MR23**: báo độ trễ, số cảnh báo/sự cố, số hành vi vững trước/sau; chủ dự án duyệt rồi mới hiệu chỉnh
+  - Đã báo (03/10/2026, số đo ở [`incident-unification.md`](incident-unification.md) mục 4) — chờ chủ dự án duyệt
 
 ## Giai đoạn H — Hiệu chỉnh và độ tin cậy (tuần 2 – tuần 3)
 

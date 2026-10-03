@@ -1,5 +1,11 @@
 # Một lớp ML: mô hình địa lý-thời gian thành nguồn bằng chứng của hybrid (MR22)
 
+> **Cập nhật MR23** ([`incident-unification.md`](incident-unification.md) mục 5): (1) trên luồng thật, đặc trưng
+> `minutes_since_last_login` của mọi lần đăng nhập thành công là 0 từ Tuần 7 (truy vấn thấy chính lần thử vừa ghi) — đã sửa,
+> có test so khớp với đặc trưng lúc train; số đo trên tập test ở dưới là offline nên không bị ảnh hưởng. (2) Tên họ tấn công
+> "địa lý-thời gian" của MR22 dài 67 ký tự > cột 64 — Postgres từ chối ghi cảnh báo (lần đăng nhập thành công trả 500) — đã
+> rút gọn. (3) Cột `login_events.ml_anomaly_score` đã xoá (MR23), mô hình không còn được gọi cho tài khoản dưới cổng.
+
 Trước MR22, mô hình địa lý-thời gian (tầng 3, Isolation Forest trên 9 đặc trưng giờ/vị trí/thiết bị/khoảng cách — Tuần 7,
 [`ml-evaluation.md`](ml-evaluation.md), [`model-b-geo-time.md`](model-b-geo-time.md)) chạy **song song** với hybrid risk
 engine và tự tạo cảnh báo `ml_anomaly` riêng: một lần đăng nhập có thể ra hai cảnh báo với hai điểm khác nhau, và

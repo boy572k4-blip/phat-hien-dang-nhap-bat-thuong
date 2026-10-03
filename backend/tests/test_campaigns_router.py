@@ -36,7 +36,7 @@ def _seed_campaign(db_session):
     for ev, user, severity in ((ev_alice, alice, "high"), (ev_bob, bob, "high"), (ev_ghost, None, "medium")):
         db_session.add(
             Alert(
-                login_event_id=ev.id, user_id=user.id if user else None, alert_type="hybrid_risk", severity=severity, risk_score=90,
+                login_event_id=ev.id, user_id=user.id if user else None, severity=severity, risk_score=90,
                 message=f"canh bao cho {ev.attempted_username}", campaign_id=campaign.id, created_at=ev.created_at,
             )
         )

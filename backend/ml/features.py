@@ -173,9 +173,13 @@ def compute_realtime_features(
     is_new_location = 0.0 if is_known_location(db, user_id, country, city) else 1.0
     is_new_device = 0.0 if is_known_device(db, user_id, device_fingerprint) else 1.0
 
+    # MR23: mọi truy vấn lịch sử chặn ở `created_at < created_at` — pipeline GHI lần thử hiện tại (flush) TRƯỚC khi gọi
+    # hàm này, nên thiếu chặn trên thì "lần thành công gần nhất" của một lần đăng nhập THÀNH CÔNG chính là nó:
+    # `minutes_since_last_login` luôn = 0 trên luồng thật trong khi lúc train (`compute_features`) là khoảng cách thật tới
+    # lần trước — lệch train/serve có từ Tuần 7, test cũ không thấy vì không ghi lần thử hiện tại vào DB trước khi tính.
     previous_event = (
         db.query(LoginEvent)
-        .filter(LoginEvent.user_id == user_id, LoginEvent.success.is_(True))
+        .filter(LoginEvent.user_id == user_id, LoginEvent.success.is_(True), LoginEvent.created_at < created_at)
         .order_by(LoginEvent.created_at.desc())
         .first()
     )
@@ -202,7 +206,7 @@ def compute_realtime_features(
 
     first_event_with_geo = (
         db.query(LoginEvent)
-        .filter(LoginEvent.user_id == user_id, LoginEvent.success.is_(True), LoginEvent.latitude.isnot(None))
+        .filter(LoginEvent.user_id == user_id, LoginEvent.success.is_(True), LoginEvent.latitude.isnot(None), LoginEvent.created_at < created_at)
         .order_by(LoginEvent.created_at.asc())
         .first()
     )

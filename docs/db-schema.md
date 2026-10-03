@@ -7,7 +7,9 @@
 [`backend/alembic/versions/`](../backend/alembic/versions/) (`..._initial_schema.py` cho 6 bảng gốc,
 `..._add_admins_table.py` cho Tuần 5, `..._add_ml_anomaly_score...py` cho `ml_anomaly_score`,
 `..._mr12_realtime_integration...py` cho phần MR12 — xem [`realtime-integration.md`](realtime-integration.md);
-`..._mr16_otp_challenges.py` cho `otp_challenges`; `..._mr17_rule_overrides.py` cho `rule_overrides`).
+`..._mr16_otp_challenges.py` cho `otp_challenges`; `..._mr17_rule_overrides.py` cho `rule_overrides`;
+`7d2c1e5a9b30_mr23_one_incident_one_score.py` xoá hai cột điểm song song của `login_events` và cột `alerts.alert_type` —
+xem [`incident-unification.md`](incident-unification.md)).
 
 ## users
 
@@ -38,12 +40,10 @@ Bảng quan trọng nhất — mọi lần thử đăng nhập, thành công l�
 | country | VARCHAR(2) | ISO country code, nullable — NULL khi GeoIP lookup thất bại |
 | city | VARCHAR(128) | nullable |
 | latitude / longitude | FLOAT | nullable |
-| risk_score | INTEGER | nullable — Tuần 4–MR20: điểm cộng tay của tầng 2; từ MR21: bằng `hybrid_risk_score` (điểm rủi ro duy nhất) |
-| ml_anomaly_score | FLOAT | nullable — điểm bất thường của ML tầng 3 (Tuần 7); từ MR22 tầng 3 là nguồn `ml_geo` của hybrid, cột vẫn ghi cho mọi lần thử vào tài khoản có thật (kể cả tài khoản chưa qua cổng cold-start) để tra cứu |
 | asn | INTEGER | nullable, indexed — tra bằng GeoLite2-ASN (MR12), NULL khi IP riêng/không có trong CSDL |
 | os_name / browser_name | VARCHAR(64) | nullable — parse User-Agent (MR12, `app/utils/device.py`), cùng bộ giá trị RBA |
 | device_type | VARCHAR(16) | nullable — `mobile`\|`desktop`\|`tablet`\|`bot`\|`unknown` (MR12) |
-| hybrid_risk_score | INTEGER | nullable, 0–100 — điểm hybrid risk engine (MR11), CHẠY SONG SONG risk_score/ml_anomaly_score |
+| hybrid_risk_score | INTEGER | nullable, 0–100 — điểm rủi ro DUY NHẤT của lần thử (hybrid risk engine, MR11). MR23 xoá hai cột song song cũ: `risk_score` (điểm cộng tay của tầng 2; từ MR21 là bản sao điểm này) và `ml_anomaly_score` (tầng 3; từ MR22 là nguồn `ml_geo` bên trong điểm này) |
 | hybrid_action | VARCHAR(16) | nullable — `allow`\|`alert`\|`step_up`\|`lock` của hybrid risk engine; `step_up`/`lock` được THỰC THI thật từ MR16 (xem `response_actions`, `otp_challenges`) |
 | is_synthetic | BOOLEAN | default false — phân biệt dữ liệu giả lập (nhiệm vụ 2.3) |
 | created_at | TIMESTAMPTZ | default now() |
@@ -88,20 +88,19 @@ Hồ sơ hành vi "bình thường" theo user (Tuần 4). Quan hệ 1-1 với `u
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
 | id | INTEGER PK | |
-| login_event_id | INTEGER FK → login_events.id | indexed |
+| login_event_id | INTEGER FK → login_events.id | indexed — từ MR23 là lần thử ĐẦU TIÊN của sự cố |
 | user_id | INTEGER FK → users.id | nullable (username không tồn tại thì không có user) |
-| alert_type | VARCHAR(32) | `brute_force` \| `credential_stuffing` \| `impossible_travel` \| `high_risk_score` \| `ml_anomaly` \| `hybrid_risk` (MR12) — từ MR22 chỉ còn tạo `hybrid_risk`; các loại khác chỉ có trong dữ liệu cũ (tầng 1–2 xoá ở MR21, `ml_anomaly` ở MR22) |
-| severity | VARCHAR(16) | `low` \| `medium` \| `high` — ánh xạ từ risk_score theo mục 4.2 |
-| risk_score | INTEGER | |
+| severity | VARCHAR(16) | từ MR12: `medium` (hành động nặng nhất là alert) \| `high` (step_up/lock); cảnh báo cũ có thể là `low` |
+| risk_score | INTEGER | điểm cao nhất của sự cố |
 | message | TEXT | mô tả người đọc được, hiển thị trực tiếp trên dashboard |
 | rule_id | VARCHAR(64) | nullable (MR12) — mã luật (`app/detection/engine/registry.py`) hoặc luật ghi đè đã sinh ra cảnh báo; NULL nếu chỉ do ML/tầng 1-2 cũ |
 | attack_family | VARCHAR(64) | nullable — GỢI Ý (MR13, `alert_intelligence.suggest_attack_family`): 1 trong 4 `CATEGORIES` của rule engine (ưu tiên nếu có luật/danh tiếng khớp) hoặc nhãn thành phần `HybridMinTail` (chỉ khi không luật nào khớp); KHÔNG PHẢI khẳng định |
 | attack_family_confidence | FLOAT | nullable (MR13) — độ tin cậy [0,1] của `attack_family`, = trọng số của bằng chứng dẫn đầu |
-| explanation | JSON | nullable (MR12) — `{"contributions": [...], "action": ...}` từ `RiskResult`; `action` (MR13) là mức đề xuất TỆ NHẤT của cả đợt tính đến lần gộp gần nhất, dùng để phát hiện leo thang khi chống trùng lặp |
+| explanation | JSON | nullable (MR12) — từ MR23 là trạng thái của sự cố (`alert_intelligence.Incident`): `contributions` (MỌI bằng chứng của các lần thử, mỗi nguồn giữ trọng số lớn nhất), `action` (hành động nặng nhất, dùng phát hiện leo thang), `forced_by`, `lead_rule`, `evidence` (chi tiết theo luật, vd hai đầu đường bay của di chuyển bất khả thi). Cảnh báo cũ hơn MR23: `legacy_alert_type` giữ loại gốc của cột `alert_type` đã xoá |
 | campaign_id | INTEGER FK → campaigns.id | nullable — dự trữ cho MR14 (tương quan chiến dịch), chưa có gì gán |
 | status | VARCHAR(16) | default `'open'` (MR12) — `open`\|`acknowledged`\|`resolved`\|`false_positive`; chi tiết hơn `resolved`, TỒN TẠI SONG SONG (tương thích ngược) |
 | feedback | TEXT | nullable — ghi chú ngắn của quản trị viên (MR15, `POST /alerts/{id}/feedback`); `status` chuyển `resolved`\|`false_positive` cùng lúc, nguồn cho `user_risk_profiles` |
-| occurrence_count | INTEGER | default 1 (MR13) — chống trùng lặp: số lần CÙNG (tài khoản hoặc IP) + `attack_family` khớp trong `DEDUP_WINDOW` (15 phút) đã GỘP vào hàng này thay vì tạo hàng mới |
+| occurrence_count | INTEGER | default 1 (MR13) — số lần thử của sự cố. MR23: gộp theo (tài khoản, hoặc IP nếu tên đăng nhập không tồn tại), KHÔNG còn theo `attack_family`, cửa sổ trượt 15 phút tính từ `last_seen_at`; chỉ mục `ix_alerts_open_incident (user_id, status, last_seen_at)` |
 | last_seen_at | TIMESTAMPTZ | nullable (MR13) — lần khớp GẦN NHẤT của đợt đã gộp; `created_at` giữ nguyên lần ĐẦU TIÊN |
 | priority_score | FLOAT | nullable (MR13) — `novelty_level × attack_family_confidence × users.importance`; sắp xếp mặc định của `GET /alerts` (NULLS LAST), KHÔNG thay `severity`/`risk_score` |
 | resolved | BOOLEAN | default false |

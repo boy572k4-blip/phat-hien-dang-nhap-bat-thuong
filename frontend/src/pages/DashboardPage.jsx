@@ -8,6 +8,7 @@ import BlocklistPanel from "../components/BlocklistPanel";
 import LogTablePanel from "../components/LogTablePanel";
 import MapPanel from "../components/MapPanel";
 import RiskChartPanel from "../components/RiskChartPanel";
+import { alertTitle } from "../services/risk";
 import { useAlertsSocket } from "../services/useAlertsSocket";
 
 const TOAST_DURATION_MS = 6000;
@@ -15,7 +16,7 @@ const TOAST_DURATION_MS = 6000;
 // Dashboard admin — bố cục 4 khu vực (nhiệm vụ 3.4), nối dữ liệu thật
 // (nhiệm vụ 4.3) và cập nhật real-time qua WebSocket (nhiệm vụ 5.3): khi
 // có cảnh báo mới, bảng log/biểu đồ tự làm mới + hiện popup, bản đồ vẽ
-// đường nối nếu là impossible travel.
+// đường bay nếu sự cố có bằng chứng di chuyển bất khả thi.
 export default function DashboardPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [latestAlert, setLatestAlert] = useState(null);
@@ -47,7 +48,7 @@ export default function DashboardPage() {
 
       {toast && (
         <div className="alert-toast" role="alert">
-          🚨 <strong>{toast.alert_type}</strong> — {toast.message}
+          🚨 <strong>{alertTitle(toast)}</strong> — {toast.message}
         </div>
       )}
 

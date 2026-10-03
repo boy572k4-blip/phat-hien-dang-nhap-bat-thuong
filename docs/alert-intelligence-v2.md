@@ -1,5 +1,9 @@
 # Cảnh báo thông minh v2 (MR13)
 
+> **MR23** đổi chống trùng lặp thành mô hình **sự cố**: gộp theo tài khoản (hoặc IP nếu tên đăng nhập không tồn tại), không còn
+> theo họ tấn công, cửa sổ 15 phút **trượt** theo lần gần nhất; họ tấn công lấy theo luật đã ép hành động (nếu có) của lần thử
+> quyết định — xem [`incident-unification.md`](incident-unification.md). Số đo dưới đây là ảnh chụp của MR13.
+
 Kịch bản có NHÃN TỰ ĐẶT (không phải RBA — RBA không có nhãn "họ tấn công") chạy trên CHÍNH pipeline thật (rule engine v2 + hybrid risk engine, model `hybrid_cp2` thật), DB SQLite cô lập mỗi kịch bản — mã nguồn: [`backend/scripts/alert_intelligence_sim.py`](../backend/scripts/alert_intelligence_sim.py). Cơ chế (novelty, gán họ tấn công, ưu tiên, chống trùng lặp): [`app/detection/alert_intelligence.py`](../backend/app/detection/alert_intelligence.py).
 
 ## Kết quả chính

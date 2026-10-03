@@ -26,10 +26,10 @@ def _seed_two_alerts(db_session):
     db_session.flush()
 
     # "low_priority" tạo TRƯỚC (created_at mặc định = lúc chạy test, nhưng thêm trước -> id nhỏ hơn) nhưng priority_score THẤP hơn.
-    low_priority = Alert(login_event_id=event.id, user_id=user.id, alert_type="hybrid_risk", severity="medium", risk_score=40, message="thap", priority_score=0.5)
+    low_priority = Alert(login_event_id=event.id, user_id=user.id, severity="medium", risk_score=40, message="thap", priority_score=0.5)
     db_session.add(low_priority)
     db_session.flush()
-    high_priority = Alert(login_event_id=event.id, user_id=user.id, alert_type="hybrid_risk", severity="high", risk_score=90, message="cao", priority_score=3.2)
+    high_priority = Alert(login_event_id=event.id, user_id=user.id, severity="high", risk_score=90, message="cao", priority_score=3.2)
     db_session.add(high_priority)
     db_session.commit()
     return low_priority, high_priority
@@ -64,9 +64,9 @@ def test_alerts_older_than_mr13_without_a_priority_score_sort_to_the_bottom_not_
     event = LoginEvent(user_id=user.id, attempted_username="bob", success=True, ip_address="2.2.2.2", created_at=BASE)
     db_session.add(event)
     db_session.flush()
-    legacy = Alert(login_event_id=event.id, user_id=user.id, alert_type="brute_force", severity="high", risk_score=80, message="cu", priority_score=None)
+    legacy = Alert(login_event_id=event.id, user_id=user.id, severity="high", risk_score=80, message="cu", priority_score=None)
     db_session.add(legacy)
-    new = Alert(login_event_id=event.id, user_id=user.id, alert_type="hybrid_risk", severity="low", risk_score=10, message="moi", priority_score=0.1)
+    new = Alert(login_event_id=event.id, user_id=user.id, severity="low", risk_score=10, message="moi", priority_score=0.1)
     db_session.add(new)
     db_session.commit()
 
@@ -86,9 +86,9 @@ def _seed_filterable_alerts(db_session):
     db_session.add(event)
     db_session.flush()
 
-    a = Alert(login_event_id=event.id, user_id=user.id, alert_type="hybrid_risk", severity="high", risk_score=90,
+    a = Alert(login_event_id=event.id, user_id=user.id, severity="high", risk_score=90,
               message="a", attack_family="Đoán và dò mật khẩu", rule_id="brute_force", campaign_id=None, status="open")
-    b = Alert(login_event_id=event.id, user_id=user.id, alert_type="hybrid_risk", severity="medium", risk_score=50,
+    b = Alert(login_event_id=event.id, user_id=user.id, severity="medium", risk_score=50,
               message="b", attack_family="Danh tiếng hạ tầng", rule_id="blocklist_hit", campaign_id=None, status="resolved")
     db_session.add_all([a, b])
     db_session.commit()
@@ -135,8 +135,8 @@ def test_filters_by_campaign_id(db_session, client):
     campaign = Campaign(label="test", alert_count=1, first_seen_at=BASE, last_seen_at=BASE)
     db_session.add(campaign)
     db_session.flush()
-    in_campaign = Alert(login_event_id=event.id, user_id=user.id, alert_type="hybrid_risk", severity="high", risk_score=90, message="x", campaign_id=campaign.id)
-    outside = Alert(login_event_id=event.id, user_id=user.id, alert_type="hybrid_risk", severity="high", risk_score=90, message="y", campaign_id=None)
+    in_campaign = Alert(login_event_id=event.id, user_id=user.id, severity="high", risk_score=90, message="x", campaign_id=campaign.id)
+    outside = Alert(login_event_id=event.id, user_id=user.id, severity="high", risk_score=90, message="y", campaign_id=None)
     db_session.add_all([in_campaign, outside])
     db_session.commit()
 

@@ -42,7 +42,8 @@ class AdminLoginResponse(BaseModel):
 
 
 class LoginEventOut(BaseModel):
-    """Dùng cho GET /login-events (nhiệm vụ 4.3)."""
+    """Dùng cho GET /login-events (nhiệm vụ 4.3). MR23: một điểm rủi ro (`hybrid_risk_score`) và một hành động
+    (`hybrid_action`) cho mỗi lần thử — hai điểm song song cũ `risk_score` (tầng 2) và `ml_anomaly_score` (tầng 3) đã xoá."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -53,8 +54,6 @@ class LoginEventOut(BaseModel):
     ip_address: str
     country: str | None
     city: str | None
-    risk_score: int | None
-    ml_anomaly_score: float | None
     is_synthetic: bool
     created_at: datetime
 
@@ -67,24 +66,32 @@ class LoginEventOut(BaseModel):
     hybrid_action: str | None = None
 
 
+class ActionBandsOut(BaseModel):
+    """Ngưỡng hành động của hồ sơ hybrid đang dùng (ngưỡng NHÓM; tài khoản có phản hồi đủ có thể được nới riêng — MR15)."""
+
+    alert_at: int
+    step_up_at: int
+    lock_at: int
+
+
 class PaginatedLoginEvents(BaseModel):
     items: list[LoginEventOut]
     total: int
     page: int
     page_size: int
+    action_bands: ActionBandsOut  # MR23: biểu đồ vẽ đúng ngưỡng đang dùng thay vì 40/70 cố định của Tuần 4
 
 
 class AlertOut(BaseModel):
-    """Dùng cho GET /alerts (nhiệm vụ 4.3)."""
+    """Dùng cho GET /alerts (nhiệm vụ 4.3). MR23: một cảnh báo = một sự cố; không còn `alert_type` (chỉ một loại)."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    login_event_id: int
+    login_event_id: int  # lần thử đầu tiên của sự cố
     user_id: int | None
-    alert_type: str
     severity: str
-    risk_score: int
+    risk_score: int  # điểm cao nhất của sự cố
     message: str
     resolved: bool
     created_at: datetime
@@ -92,6 +99,8 @@ class AlertOut(BaseModel):
     # MR12: gắn với luật/mô hình đã sinh ra cảnh báo, giải thích, chiến dịch (MR14), trạng thái xử lý chi tiết hơn `resolved`
     rule_id: str | None = None
     attack_family: str | None = None
+    # MR23: contributions (mọi bằng chứng), action (hành động nặng nhất), forced_by, evidence (chi tiết theo luật);
+    # cảnh báo cũ hơn MR23 có thể chỉ có `legacy_alert_type`
     explanation: dict | None = None
     campaign_id: int | None = None
     status: str = "open"
@@ -148,7 +157,7 @@ class CampaignTimelineItem(BaseModel):
     alert_id: int
     user_id: int | None
     username: str | None  # None nếu tài khoản không tồn tại (tên đăng nhập bị dò)
-    alert_type: str
+    attack_family: str | None  # MR23: thay `alert_type` (đã xoá)
     severity: str
     risk_score: int
     message: str

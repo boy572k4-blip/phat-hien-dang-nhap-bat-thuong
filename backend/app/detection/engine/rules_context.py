@@ -47,7 +47,10 @@ def impossible_travel(ctx: RuleContext) -> Finding | None:
         f"Cách {distance:.0f}km chỉ sau {elapsed_hours * 60:.1f} phút (~{speed:,.0f} km/h, ngưỡng {p.max_speed_kmh:.0f}).",
         {
             "distance_km": round(distance, 1), "elapsed_minutes": round(elapsed_hours * 60, 2), "speed_kmh": round(speed, 1),
-            "previous_latitude": h.last_event_lat, "previous_longitude": h.last_event_lon,  # frontend vẽ đường nối hai điểm trên bản đồ
+            # Hai đầu đường bay — frontend vẽ đường nối trên bản đồ. Từ MR23 bằng chứng được lưu trong cảnh báo nên cần đủ
+            # CẢ hai điểm (trước đó điểm hiện tại đi kèm payload WebSocket, mất khi tải lại trang).
+            "previous_latitude": h.last_event_lat, "previous_longitude": h.last_event_lon,
+            "latitude": a.latitude, "longitude": a.longitude,
         },
     )
 
