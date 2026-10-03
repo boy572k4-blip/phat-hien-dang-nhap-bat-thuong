@@ -25,6 +25,10 @@ hình (coi như phụ thuộc hoàn toàn — cận dưới của "ít nhất m�
 pipeline thật: cộng noisy-OR thì bằng chứng dưới ngưỡng của tầng 3 chồng lên nền ~0,2–0,3 mà `hybrid_cp2` cho mọi IP Việt
 Nam (lệch phân phối đã biết, MR26) và biến đăng nhập bình thường thành cảnh báo. Mô hình thua vẫn được liệt kê trong
 `contributions` (cùng chiều, để giải thích) nhưng không đổi điểm.
+
+Danh tiếng hạ tầng (MR25) gộp cùng cách — lấy MAX trong nhóm: Tor/datacenter/VPN/blocklist đều là thuộc tính của CÙNG MỘT
+IP, không phải bằng chứng độc lập (bộ MR24: 43/56 lần thử hợp lệ qua VPN khớp CẢ `vpn_ip` lẫn `datacenter_ip` — nhà cung
+cấp VPN thuê máy chủ ở trung tâm dữ liệu). Noisy-OR sẽ đếm "IP này của nhà cung cấp VPN" hai lần.
 """
 
 from __future__ import annotations
@@ -132,7 +136,7 @@ def combine_risk(
             forced_action, forced_by = spec.min_action, hit.rule_id
 
     rule_probability = noisy_or(rule_probs)
-    reputation_probability = noisy_or(reputation_probs)
+    reputation_probability = max(reputation_probs, default=0.0)  # cùng một IP: phụ thuộc, lấy max (docstring module)
     if ml_probability is not None:
         contributions.append(Contribution("ml", "mô hình học máy", float(ml_probability), "ml"))
     if ml_geo_probability is not None:

@@ -32,8 +32,10 @@ CATEGORY = "Đoán và dò mật khẩu"
     min_action="alert",
     notes=(
         "Ngưỡng và cửa sổ là luật tầng 1 gốc (docs/api-contract.md mục 6, giả định chưa đối chiếu). Khớp ở MỖI lần sai từ lần thứ `threshold` trở đi; "
-        "gộp cảnh báo trùng là việc của MR13. Hành động tối thiểu `alert` (MR21, tạm thời — chốt ở MR25 bằng số đo báo nhầm) thay cho cảnh báo riêng "
-        "của tầng 1 và điểm \"chuỗi sai +40\" của tầng 2 (cùng điều kiện 5 lần/5 phút)."
+        "gộp cảnh báo trùng là việc của MR13. Hành động tối thiểu `alert` (MR21, chốt ở MR25): chỉ hiện cho quản trị, không cản người dùng. Cái giá "
+        "đo trên bộ đánh giá MR24: 1,85% lần thử hợp lệ — toàn bộ là chính chủ quên mật khẩu (sai 5–6 lần), ca mà số lần sai một mình KHÔNG phân "
+        "biệt được với dò mật khẩu ngắn (5–12 lần). Bỏ mức ép thì 30% biến thể dò mật khẩu từ IP dân cư Việt Nam bằng trình duyệt thường không còn "
+        "được luật tự cảnh báo — và \"nhập sai 5 lần\" không còn ra cảnh báo nào (docs/rule-recalibration.md)."
     ),
 )
 def brute_force(ctx: RuleContext) -> Finding | None:
@@ -72,7 +74,7 @@ def brute_force(ctx: RuleContext) -> Finding | None:
     ),
     needs=(),
     min_action="alert",
-    notes="Phạm vi ASN chỉ chạy khi biết ASN (GeoLite2-ASN). Ngưỡng IP (10 lần, 5 tên, 5 phút) là luật gốc. Hành động tối thiểu `alert` (MR21, tạm thời — chốt ở MR25).",
+    notes="Phạm vi ASN chỉ chạy khi biết ASN (GeoLite2-ASN). Ngưỡng IP (10 lần, 5 tên, 5 phút) là luật gốc. Hành động tối thiểu `alert` (MR21, chốt ở MR25: 0 lần thử hợp lệ bị ép trên bộ MR24, kể cả 5–15 đồng nghiệp sau một NAT văn phòng — điều kiện tỉ lệ thành công loại họ ra).",
 )
 def credential_stuffing(ctx: RuleContext) -> Finding | None:
     a, p = ctx.attempt, ctx.p
@@ -227,8 +229,9 @@ def username_enumeration(ctx: RuleContext) -> Finding | None:
     min_action="step_up",
     notes=(
         "Người dùng thật cũng gõ sai vài lần rồi đúng; ngưỡng 5 (cao hơn mức 3 của điểm rủi ro tầng 2 cũ) để giảm báo nhầm — cần đo trên log thật. "
-        "Hành động tối thiểu `step_up` (MR21, tạm thời — chốt ở MR25): người dùng thật gõ sai nhiều lần chỉ phải xác thực thêm, kẻ đã đoán trúng mật "
-        "khẩu thì bị chặn ở bước đó — thay cho điểm \"thành công sau chuỗi sai +50\" của tầng 2."
+        "Hành động tối thiểu `step_up` (MR21, chốt ở MR25): người dùng thật gõ sai nhiều lần chỉ phải xác thực thêm, kẻ đã đoán trúng mật khẩu "
+        "thì bị chặn ở bước đó — thay cho điểm \"thành công sau chuỗi sai +50\" của tầng 2. Cái giá đo trên bộ MR24: 20/30 biến thể \"quên mật "
+        "khẩu\" phải xác thực thêm (1,5% lần thử hợp lệ); bỏ mức ép thì chỉ 27% biến thể \"đoán trúng mật khẩu\" còn bị luật chặn."
     ),
 )
 def success_after_failures(ctx: RuleContext) -> Finding | None:

@@ -71,6 +71,9 @@ class RuleWeightEntry:
     calibrated: bool
     n: int = 0  # số dòng luật khớp dùng để đo (0 nếu calibrated=False)
     ci95: tuple[float, float] | None = None
+    # MR25: nguồn của số đo — "rba" (MR11, độ chính xác trên RBA), "corpus_mr24" (tỉ số khả năng trên bộ dữ liệu hiệu
+    # chỉnh MR24 quy về tỉ lệ tấn công của RBA), None với hồ sơ cũ (coi như "rba" nếu calibrated)
+    source: str | None = None
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.weight <= 1.0:
@@ -81,13 +84,19 @@ class RuleWeightEntry:
             raise HybridConfigError("ci95 phải là (thấp, cao) với thấp <= cao")
 
     def to_dict(self) -> dict[str, Any]:
-        return {"weight": self.weight, "calibrated": self.calibrated, "n": self.n, "ci95": None if self.ci95 is None else list(self.ci95)}
+        data = {"weight": self.weight, "calibrated": self.calibrated, "n": self.n, "ci95": None if self.ci95 is None else list(self.ci95)}
+        if self.source is not None:
+            data["source"] = self.source
+        return data
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "RuleWeightEntry":
         try:
             ci = data.get("ci95")
-            return cls(float(data["weight"]), bool(data["calibrated"]), int(data.get("n", 0)), None if ci is None else (float(ci[0]), float(ci[1])))
+            return cls(
+                float(data["weight"]), bool(data["calibrated"]), int(data.get("n", 0)), None if ci is None else (float(ci[0]), float(ci[1])),
+                data.get("source"),
+            )
         except (KeyError, TypeError, IndexError) as exc:
             raise HybridConfigError(f"trọng số luật sai định dạng: {exc}") from exc
 

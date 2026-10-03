@@ -93,7 +93,7 @@ Nhiều lần đăng nhập sai vào CÙNG một tên đăng nhập trong thời
 - **Mức nghiêm trọng:** cao · **chế độ mặc định:** enforce (bằng chứng + được ép hành động tối thiểu) · **hành động tối thiểu:** `alert` (cảnh báo)
 - **MITRE ATT&CK:** T1110.001 (Brute Force: Password Guessing)
 - **Dữ liệu cần:** không (chỉ cần `LoginAttempt`)
-- **Ghi chú:** Ngưỡng và cửa sổ là luật tầng 1 gốc (docs/api-contract.md mục 6, giả định chưa đối chiếu). Khớp ở MỖI lần sai từ lần thứ `threshold` trở đi; gộp cảnh báo trùng là việc của MR13. Hành động tối thiểu `alert` (MR21, tạm thời — chốt ở MR25 bằng số đo báo nhầm) thay cho cảnh báo riêng của tầng 1 và điểm "chuỗi sai +40" của tầng 2 (cùng điều kiện 5 lần/5 phút).
+- **Ghi chú:** Ngưỡng và cửa sổ là luật tầng 1 gốc (docs/api-contract.md mục 6, giả định chưa đối chiếu). Khớp ở MỖI lần sai từ lần thứ `threshold` trở đi; gộp cảnh báo trùng là việc của MR13. Hành động tối thiểu `alert` (MR21, chốt ở MR25): chỉ hiện cho quản trị, không cản người dùng. Cái giá đo trên bộ đánh giá MR24: 1,85% lần thử hợp lệ — toàn bộ là chính chủ quên mật khẩu (sai 5–6 lần), ca mà số lần sai một mình KHÔNG phân biệt được với dò mật khẩu ngắn (5–12 lần). Bỏ mức ép thì 30% biến thể dò mật khẩu từ IP dân cư Việt Nam bằng trình duyệt thường không còn được luật tự cảnh báo — và "nhập sai 5 lần" không còn ra cảnh báo nào (docs/rule-recalibration.md).
 
 | Tham số | Mặc định | Đơn vị | Khoảng | Ý nghĩa |
 |---|---|---|---|---|
@@ -107,7 +107,7 @@ Một IP (hoặc một nhà mạng/ASN) thử nhiều tên đăng nhập KHÁC N
 - **Mức nghiêm trọng:** cao · **chế độ mặc định:** enforce (bằng chứng + được ép hành động tối thiểu) · **hành động tối thiểu:** `alert` (cảnh báo)
 - **MITRE ATT&CK:** T1110.004 (Brute Force: Credential Stuffing)
 - **Dữ liệu cần:** không (chỉ cần `LoginAttempt`)
-- **Ghi chú:** Phạm vi ASN chỉ chạy khi biết ASN (GeoLite2-ASN). Ngưỡng IP (10 lần, 5 tên, 5 phút) là luật gốc. Hành động tối thiểu `alert` (MR21, tạm thời — chốt ở MR25).
+- **Ghi chú:** Phạm vi ASN chỉ chạy khi biết ASN (GeoLite2-ASN). Ngưỡng IP (10 lần, 5 tên, 5 phút) là luật gốc. Hành động tối thiểu `alert` (MR21, chốt ở MR25: 0 lần thử hợp lệ bị ép trên bộ MR24, kể cả 5–15 đồng nghiệp sau một NAT văn phòng — điều kiện tỉ lệ thành công loại họ ra).
 
 | Tham số | Mặc định | Đơn vị | Khoảng | Ý nghĩa |
 |---|---|---|---|---|
@@ -173,7 +173,7 @@ Một IP thử nhiều tên đăng nhập KHÔNG tồn tại — dò xem tài kh
 - **Mức nghiêm trọng:** cao · **chế độ mặc định:** enforce (bằng chứng + được ép hành động tối thiểu) · **hành động tối thiểu:** `step_up` (xác thực thêm)
 - **MITRE ATT&CK:** T1110.001 (Brute Force: Password Guessing)
 - **Dữ liệu cần:** `account`
-- **Ghi chú:** Người dùng thật cũng gõ sai vài lần rồi đúng; ngưỡng 5 (cao hơn mức 3 của điểm rủi ro tầng 2 cũ) để giảm báo nhầm — cần đo trên log thật. Hành động tối thiểu `step_up` (MR21, tạm thời — chốt ở MR25): người dùng thật gõ sai nhiều lần chỉ phải xác thực thêm, kẻ đã đoán trúng mật khẩu thì bị chặn ở bước đó — thay cho điểm "thành công sau chuỗi sai +50" của tầng 2.
+- **Ghi chú:** Người dùng thật cũng gõ sai vài lần rồi đúng; ngưỡng 5 (cao hơn mức 3 của điểm rủi ro tầng 2 cũ) để giảm báo nhầm — cần đo trên log thật. Hành động tối thiểu `step_up` (MR21, chốt ở MR25): người dùng thật gõ sai nhiều lần chỉ phải xác thực thêm, kẻ đã đoán trúng mật khẩu thì bị chặn ở bước đó — thay cho điểm "thành công sau chuỗi sai +50" của tầng 2. Cái giá đo trên bộ MR24: 20/30 biến thể "quên mật khẩu" phải xác thực thêm (1,5% lần thử hợp lệ); bỏ mức ép thì chỉ 27% biến thể "đoán trúng mật khẩu" còn bị luật chặn.
 
 | Tham số | Mặc định | Đơn vị | Khoảng | Ý nghĩa |
 |---|---|---|---|---|
@@ -271,7 +271,7 @@ IP, dải CIDR, ASN hoặc tên đăng nhập của lần thử nằm trong bloc
 - **Mức nghiêm trọng:** cao · **chế độ mặc định:** enforce (bằng chứng + được ép hành động tối thiểu) · **hành động tối thiểu:** `lock` (khoá tạm)
 - **MITRE ATT&CK:** không ánh xạ kỹ thuật cụ thể
 - **Dữ liệu cần:** không (chỉ cần `LoginAttempt`)
-- **Ghi chú:** Quyết định của con người nên không ánh xạ kỹ thuật MITRE cụ thể. Hạn dùng của mục chặn so với thời gian của sự kiện. MR16 bổ sung hành động chặn thật. Hành động tối thiểu `lock` — trước MR21 là cơ chế "luật ghi đè" riêng của hybrid risk engine, giờ là trường hợp đặc biệt của `min_action`.
+- **Ghi chú:** Quyết định của con người nên không ánh xạ kỹ thuật MITRE cụ thể. Hạn dùng của mục chặn so với thời gian của sự kiện. MR16 bổ sung hành động chặn thật. Hành động tối thiểu `lock` — trước MR21 là cơ chế "luật ghi đè" riêng của hybrid risk engine, giờ là trường hợp đặc biệt của `min_action`. Giữ ở MR25: bộ MR24 không có nguồn nào trong blocklist nên không đo được — đây là quyết định của quản trị viên, không phải ước lượng thống kê.
 
 ### Ngữ cảnh tài khoản
 
@@ -282,7 +282,7 @@ Hai lần đăng nhập liên tiếp của một tài khoản cách nhau quá xa
 - **Mức nghiêm trọng:** cao · **chế độ mặc định:** enforce (bằng chứng + được ép hành động tối thiểu) · **hành động tối thiểu:** `alert` (cảnh báo)
 - **MITRE ATT&CK:** T1078 (Valid Accounts)
 - **Dữ liệu cần:** `account`, `geo`, `history`
-- **Ghi chú:** Luật tầng 1 gốc (ngưỡng 900 km/h lấy nguyên văn từ checklist). Bỏ qua khi thiếu GeoIP ở một trong hai lần. VPN/proxy làm sai lệch vị trí. Không chạy được trên RBA (không có toạ độ) nên trọng số hybrid chỉ là mặc định 5% — hành động tối thiểu `alert` (MR21, tạm thời — chốt ở MR25) giữ cho luật tự cảnh báo được như cảnh báo riêng của tầng 1 trước đây.
+- **Ghi chú:** Luật tầng 1 gốc (ngưỡng 900 km/h lấy nguyên văn từ checklist). Bỏ qua khi thiếu GeoIP ở một trong hai lần. VPN/proxy làm sai lệch vị trí. Không chạy được trên RBA (không có toạ độ) nên trọng số hybrid chỉ là mặc định 5% — hành động tối thiểu `alert` (MR21, chốt ở MR25: 0 lần thử hợp lệ bị ép trên bộ MR24, kể cả đi công tác bằng máy bay) giữ cho luật tự cảnh báo được như cảnh báo riêng của tầng 1. Từ MR25 trọng số cũng đo được trên bộ MR24 (docs/rule-recalibration.md).
 
 | Tham số | Mặc định | Đơn vị | Khoảng | Ý nghĩa |
 |---|---|---|---|---|

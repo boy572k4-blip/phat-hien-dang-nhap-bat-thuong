@@ -122,6 +122,13 @@ def test_reputation_and_other_rules_are_combined_separately_then_merged():
     assert groups[reputation_rule] == "reputation" and groups[other_rule] == "rule"
 
 
+def test_reputation_rules_describe_one_ip_so_the_group_takes_the_max_not_noisy_or():
+    """MR25: VPN thuê máy chủ ở trung tâm dữ liệu khớp cả `vpn_ip` lẫn `datacenter_ip` — một sự thật về IP, không phải hai."""
+    result = combine_risk(ml_probability=None, hits=[hit("vpn_ip"), hit("datacenter_ip")], weights=weights({"vpn_ip": 0.2, "datacenter_ip": 0.3}), bands=BANDS)
+    assert result.reputation_probability == pytest.approx(0.3) and result.score == 30
+    assert {c.source for c in result.contributions} == {"vpn_ip", "datacenter_ip"}  # bên thua vẫn được liệt kê để giải thích
+
+
 def test_reputation_category_constant_is_a_real_registry_category():
     assert REPUTATION_CATEGORY in CATEGORIES
     assert {rid for rid, spec in REGISTRY.items() if spec.category == REPUTATION_CATEGORY} == {"tor_exit", "datacenter_ip", "vpn_ip", "blocklist_hit"}
@@ -172,8 +179,9 @@ def test_rules_without_a_min_action_only_ever_contribute_their_weight():
     assert result.action == "allow" and result.score == 10 and result.overridden_by is None
 
 
-def test_the_real_registry_ships_the_provisional_min_actions_of_the_plan():
-    """Mức tạm thời theo kế hoạch MR21 (docs/checklist.md) — MR25 chốt lại bằng số đo báo nhầm; đổi mức thì sửa cả test này."""
+def test_the_real_registry_ships_the_min_actions_settled_by_mr25():
+    """MR25 chốt bằng số đo báo nhầm trên bộ đánh giá MR24 (docs/rule-recalibration.md): giữ cả năm mức tạm thời của MR21.
+    Đổi mức thì sửa cả test này."""
     forcing = {rule_id: s.min_action for rule_id, s in REGISTRY.items() if s.min_action is not None}
     assert forcing == {
         "brute_force": "alert", "credential_stuffing": "alert", "impossible_travel": "alert",

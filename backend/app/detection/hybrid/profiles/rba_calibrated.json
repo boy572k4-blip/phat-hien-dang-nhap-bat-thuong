@@ -8,7 +8,8 @@
     "ci95": [
      0.0,
      0.2626013344648322
-    ]
+    ],
+    "source": "rba"
    },
    "credential_stuffing": {
     "weight": 0.3457244552478514,
@@ -17,7 +18,8 @@
     "ci95": [
      0.30185798193539803,
      0.4004058097861713
-    ]
+    ],
+    "source": "rba"
    },
    "password_spray_slow": {
     "weight": 0.10183046762866135,
@@ -26,31 +28,38 @@
     "ci95": [
      0.07572023324938777,
      0.13270807036910193
-    ]
+    ],
+    "source": "rba"
    },
    "distributed_bruteforce": {
-    "weight": 0.0,
+    "weight": 0.57,
     "calibrated": true,
-    "n": 2,
+    "n": 124,
     "ci95": [
-     0.0,
-     0.0
-    ]
+     0.7938,
+     0.9047
+    ],
+    "source": "corpus_mr24_capped"
    },
    "success_after_failures": {
-    "weight": 0.0,
+    "weight": 0.0409,
     "calibrated": true,
-    "n": 40,
+    "n": 58,
     "ci95": [
-     0.0,
-     0.0
-    ]
+     0.0244,
+     0.0688
+    ],
+    "source": "corpus_mr24"
    },
    "ua_rotation": {
-    "weight": 0.05,
-    "calibrated": false,
-    "n": 0,
-    "ci95": null
+    "weight": 0.57,
+    "calibrated": true,
+    "n": 115,
+    "ci95": [
+     0.7988,
+     0.8934
+    ],
+    "source": "corpus_mr24_capped"
    },
    "dormant_account_login": {
     "weight": 0.025352667597406495,
@@ -59,7 +68,8 @@
     "ci95": [
      0.016394964232854733,
      0.03569146822869038
-    ]
+    ],
+    "source": "rba"
    },
    "rare_network_login": {
     "weight": 0.02614068441064639,
@@ -68,7 +78,8 @@
     "ci95": [
      0.003142820471255448,
      0.051511221145115735
-    ]
+    ],
+    "source": "rba"
    },
    "multi_context_simultaneous": {
     "weight": 0.0,
@@ -77,70 +88,105 @@
     "ci95": [
      0.0,
      0.0
-    ]
+    ],
+    "source": "rba"
    },
    "country_hop": {
-    "weight": 0.0,
+    "weight": 0.57,
     "calibrated": true,
-    "n": 58,
+    "n": 301,
     "ci95": [
-     0.0,
-     0.0
-    ]
+     0.916,
+     0.9541
+    ],
+    "source": "corpus_mr24_capped"
    },
    "bot_user_agent": {
-    "weight": 0.05,
-    "calibrated": false,
-    "n": 0,
-    "ci95": null
+    "weight": 0.57,
+    "calibrated": true,
+    "n": 42,
+    "ci95": [
+     0.4921,
+     0.789
+    ],
+    "source": "corpus_mr24_capped"
    },
    "scripted_client": {
-    "weight": 0.05,
-    "calibrated": false,
-    "n": 0,
-    "ci95": null
+    "weight": 0.57,
+    "calibrated": true,
+    "n": 943,
+    "ci95": [
+     0.975,
+     0.9838
+    ],
+    "source": "corpus_mr24_capped"
    },
    "username_enumeration": {
-    "weight": 0.05,
-    "calibrated": false,
-    "n": 0,
-    "ci95": null
+    "weight": 0.57,
+    "calibrated": true,
+    "n": 236,
+    "ci95": [
+     0.8866,
+     0.9455
+    ],
+    "source": "corpus_mr24_capped"
    },
    "regular_rhythm": {
-    "weight": 0.05,
-    "calibrated": false,
-    "n": 0,
-    "ci95": null
+    "weight": 0.57,
+    "calibrated": true,
+    "n": 82,
+    "ci95": [
+     0.7367,
+     0.8603
+    ],
+    "source": "corpus_mr24_capped"
    },
    "impossible_travel": {
-    "weight": 0.05,
-    "calibrated": false,
-    "n": 0,
-    "ci95": null
+    "weight": 0.57,
+    "calibrated": true,
+    "n": 383,
+    "ci95": [
+     0.9357,
+     0.963
+    ],
+    "source": "corpus_mr24_capped"
    },
    "tor_exit": {
-    "weight": 0.05,
-    "calibrated": false,
-    "n": 0,
-    "ci95": null
+    "weight": 0.57,
+    "calibrated": true,
+    "n": 396,
+    "ci95": [
+     0.9361,
+     0.9662
+    ],
+    "source": "corpus_mr24_capped"
    },
    "datacenter_ip": {
-    "weight": 0.05,
-    "calibrated": false,
-    "n": 0,
-    "ci95": null
+    "weight": 0.31,
+    "calibrated": true,
+    "n": 1059,
+    "ci95": [
+     0.2718,
+     0.4808
+    ],
+    "source": "corpus_mr24_capped"
    },
    "vpn_ip": {
-    "weight": 0.05,
-    "calibrated": false,
-    "n": 0,
-    "ci95": null
+    "weight": 0.2025,
+    "calibrated": true,
+    "n": 559,
+    "ci95": [
+     0.1335,
+     0.3097
+    ],
+    "source": "corpus_mr24"
    },
    "blocklist_hit": {
     "weight": 0.05,
     "calibrated": false,
     "n": 0,
-    "ci95": null
+    "ci95": null,
+    "source": "default"
    }
   },
   "default_weight": 0.05

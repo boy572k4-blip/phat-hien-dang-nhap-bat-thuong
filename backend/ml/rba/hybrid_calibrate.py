@@ -90,19 +90,22 @@ def fired_by_rule(frame: pd.DataFrame, ladders: Sequence = LADDERS) -> pd.DataFr
 
 
 def rule_probability_of(row_ids: np.ndarray, fired: pd.DataFrame, weights: RuleWeights, registry=REGISTRY) -> tuple[np.ndarray, np.ndarray]:
-    """(xác suất luật, xác suất danh tiếng) cho từng dòng của `row_ids`, bằng CÔNG THỨC noisy-OR giống hệt
-    `combine.combine_risk` (kiểm bằng test so từng dòng với `combine_risk`). Dòng không có trong `fired` (ví dụ kẻ tấn
-    công mô phỏng — luật chưa từng được chạy trên chúng) coi như KHÔNG luật nào khớp: xác suất tổ hợp khi đó chỉ còn
-    thành phần ML — một CẬN DƯỚI của giá trị thật, xem docs/hybrid-risk-engine.md mục "Chuyển miền"."""
+    """(xác suất luật, xác suất danh tiếng) cho từng dòng của `row_ids`, bằng CÔNG THỨC giống hệt `combine.combine_risk`
+    (kiểm bằng test so từng dòng với `combine_risk`): noisy-OR giữa các luật, MAX trong nhóm danh tiếng (MR25 — cùng một IP).
+    Dòng không có trong `fired` (ví dụ kẻ tấn công mô phỏng — luật chưa từng được chạy trên chúng) coi như KHÔNG luật nào
+    khớp: xác suất tổ hợp khi đó chỉ còn thành phần ML — một CẬN DƯỚI của giá trị thật, xem docs/hybrid-risk-engine.md mục
+    "Chuyển miền"."""
     aligned = fired.reindex(row_ids, fill_value=False)
     rule_complement = np.ones(len(row_ids))
-    reputation_complement = np.ones(len(row_ids))
+    reputation = np.zeros(len(row_ids))
     for rule_id in aligned.columns:
         w = weights.weight_of(rule_id)
         mask = aligned[rule_id].to_numpy()
-        target = reputation_complement if registry[rule_id].category == REPUTATION_CATEGORY else rule_complement
-        target *= np.where(mask, 1.0 - w, 1.0)
-    return 1.0 - rule_complement, 1.0 - reputation_complement
+        if registry[rule_id].category == REPUTATION_CATEGORY:
+            reputation = np.maximum(reputation, np.where(mask, w, 0.0))
+        else:
+            rule_complement *= np.where(mask, 1.0 - w, 1.0)
+    return 1.0 - rule_complement, reputation
 
 
 def combined_probability(ml_probability: np.ndarray, rule_probability: np.ndarray, reputation_probability: np.ndarray) -> np.ndarray:
@@ -291,10 +294,14 @@ def render(payload: Mapping[str, Any]) -> str:
         "> Báo cáo TỰ SINH bởi `python -m ml.rba.hybrid_calibrate` — đừng sửa tay. Mã: [`hybrid_calibrate.py`](../backend/ml/rba/hybrid_calibrate.py), bộ gộp dùng lúc chấm điểm: "
         "[`app/detection/hybrid/combine.py`](../backend/app/detection/hybrid/combine.py). Hồ sơ: [`profiles/rba_calibrated.json`](../backend/app/detection/hybrid/profiles/rba_calibrated.json).",
         "",
+        "> **MR25:** trọng số các luật RBA không đo được (hoặc ra 0% vì mẫu nhỏ) được đo lại trên bộ kịch bản có nhãn MR24 — bảng ở "
+        "[`rule-recalibration.md`](rule-recalibration.md); trọng số ở mục 2 dưới đây là số đo trên RBA. Chạy lại script này GIỮ các trọng số "
+        "`source = corpus_mr24*` trong hồ sơ.",
+        "",
         "## 1. Cách làm",
         "",
         "- **Điểm = noisy-OR có trọng số** của ba nguồn: xác suất mô hình `hybrid_cp2` đã hiệu chỉnh (hồi quy isotonic trên `attack_ip/val`), xác suất gộp của các luật KHÔNG thuộc nhóm danh tiếng, xác suất gộp của nhóm \"Danh tiếng hạ tầng\" "
-        "(Tor/datacenter/VPN/blocklist). `P = 1 − (1−p_ml)(1−p_luật)(1−p_danh_tiếng)`; luật xác định mang **hành động tối thiểu** (MR21, `RuleSpec.min_action`: `brute_force`/`credential_stuffing`/`impossible_travel` → `alert`, `success_after_failures` → `step_up`, `blocklist_hit` → `lock`) — khớp ở chế độ `enforce` thì hành động ít nhất là mức đó và điểm hiển thị được nâng lên ngưỡng của mức đó; xác suất của bằng chứng không đổi. Trước MR21 chỉ `blocklist_hit` có cơ chế này (\"ghi đè\": điểm 100, `lock`).",
+        "(Tor/datacenter/VPN/blocklist — từ MR25 lấy MAX trong nhóm vì cùng mô tả một IP). `P = 1 − (1−p_ml)(1−p_luật)(1−p_danh_tiếng)`; luật xác định mang **hành động tối thiểu** (MR21, `RuleSpec.min_action`: `brute_force`/`credential_stuffing`/`impossible_travel` → `alert`, `success_after_failures` → `step_up`, `blocklist_hit` → `lock`) — khớp ở chế độ `enforce` thì hành động ít nhất là mức đó và điểm hiển thị được nâng lên ngưỡng của mức đó; xác suất của bằng chứng không đổi. Trước MR21 chỉ `blocklist_hit` có cơ chế này (\"ghi đè\": điểm 100, `lock`).",
         "- **Trọng số một luật** = độ chính xác đo trên `val` khi luật khớp ở bậc MẶC ĐỊNH của sổ đăng ký (dùng lại `levels.parquet` của MR10, KHÔNG replay lại): \"nếu chỉ một mình luật này khớp, khả năng đúng là bao nhiêu\" — dùng làm bằng chứng độc lập trong noisy-OR. ⚠️ KHÁC câu hỏi MR10 đã trả lời (\"luật cộng thêm bao nhiêu recall khi ĐàCÓ mô hình\", câu đó gần 0) — ở đây là độ tin cậy của luật khi ĐỨNG MỘT MÌNH, dùng để giải thích cảnh báo.",
         "- Luật `shadow` (`country_hop`, `rare_network_login`, `regular_rhythm`, `datacenter_ip`, `vpn_ip`) vẫn là bằng chứng đầy đủ ở đây; từ MR21 chế độ shadow nghĩa là luật KHÔNG được ép hành động tối thiểu (trước MR21 tài liệu ghi \"shadow chỉ quyết định rule engine có TỰ tạo cảnh báo hay không\" — không đúng trên luồng thật, nơi chỉ hybrid tạo cảnh báo).",
         "- **Ngưỡng hành động** (0–100): chọn trên đăng nhập hợp lệ THÀNH CÔNG của `val` cho ba FPR mục tiêu ĐẶT TRƯỚC — 1% (`alert`) và 0,1% (`step_up`) trùng hai ngưỡng vận hành đã công bố của `hybrid_cp2` (model-card-rba.md); 0,01% (`lock`) là mức mới, chặt hơn, cho khoá tạm.",
@@ -371,13 +378,28 @@ def _json_safe(payload: Mapping[str, Any]) -> dict[str, Any]:
     return safe
 
 
+def _keep_corpus_weights(profile: dict[str, Any]) -> dict[str, Any]:
+    """MR25 thay trọng số các luật RBA không đo được bằng số đo trên bộ MR24 (`ml/corpus/calibrate_rules.py`). Chạy lại MR11
+    không được xoá chúng: giữ mọi mục có `source` bắt đầu bằng "corpus_mr24" của hồ sơ đang có."""
+    if not PROFILE_PATH.is_file():
+        return profile
+    current = json.loads(PROFILE_PATH.read_text(encoding="utf-8")).get("rule_weights", {}).get("weights", {})
+    kept = {rule: entry for rule, entry in current.items() if str(entry.get("source", "")).startswith("corpus_mr24")}
+    if kept:
+        print(f"giữ {len(kept)} trọng số đo trên bộ MR24 (MR25): {', '.join(sorted(kept))}")
+    out = json.loads(json.dumps(profile))
+    out["rule_weights"]["weights"].update(kept)
+    return out
+
+
 def run() -> int:
     print("nạp bảng mô hình, mức bậc thang MR10 và hybrid_cp2 …", flush=True)
     payload = build_payload()
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     CALIBRATION_JSON.write_text(json.dumps(_json_safe(payload), ensure_ascii=False, indent=1, default=float), encoding="utf-8")
     PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PROFILE_PATH.write_text(json.dumps(payload["profile"], ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
+    profile = _keep_corpus_weights(payload["profile"])
+    PROFILE_PATH.write_text(json.dumps(profile, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
     DOC_PATH.write_text(render(payload), encoding="utf-8", newline="\n")
     print(f"đã ghi {DOC_PATH}, {PROFILE_PATH} và {CALIBRATION_JSON}")
     return 0

@@ -28,8 +28,9 @@ IMPOSSIBLE_TRAVEL_SPEED_KMH = 900.0  # lấy nguyên văn từ checklist gốc m
     min_action="alert",
     notes=(
         "Luật tầng 1 gốc (ngưỡng 900 km/h lấy nguyên văn từ checklist). Bỏ qua khi thiếu GeoIP ở một trong hai lần. VPN/proxy làm sai lệch vị trí. "
-        "Không chạy được trên RBA (không có toạ độ) nên trọng số hybrid chỉ là mặc định 5% — hành động tối thiểu `alert` (MR21, tạm thời — chốt ở "
-        "MR25) giữ cho luật tự cảnh báo được như cảnh báo riêng của tầng 1 trước đây."
+        "Không chạy được trên RBA (không có toạ độ) nên trọng số hybrid chỉ là mặc định 5% — hành động tối thiểu `alert` (MR21, chốt ở "
+        "MR25: 0 lần thử hợp lệ bị ép trên bộ MR24, kể cả đi công tác bằng máy bay) giữ cho luật tự cảnh báo được như cảnh báo riêng của tầng 1. Từ MR25 "
+        "trọng số cũng đo được trên bộ MR24 (docs/rule-recalibration.md)."
     ),
 )
 def impossible_travel(ctx: RuleContext) -> Finding | None:

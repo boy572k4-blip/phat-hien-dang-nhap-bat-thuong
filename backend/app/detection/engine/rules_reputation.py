@@ -78,7 +78,7 @@ def vpn_ip(ctx: RuleContext) -> Finding | None:
     min_action="lock",
     notes=(
         "Quyết định của con người nên không ánh xạ kỹ thuật MITRE cụ thể. Hạn dùng của mục chặn so với thời gian của sự kiện. MR16 bổ sung hành động "
-        "chặn thật. Hành động tối thiểu `lock` — trước MR21 là cơ chế \"luật ghi đè\" riêng của hybrid risk engine, giờ là trường hợp đặc biệt của `min_action`."
+        "chặn thật. Hành động tối thiểu `lock` — trước MR21 là cơ chế \"luật ghi đè\" riêng của hybrid risk engine, giờ là trường hợp đặc biệt của `min_action`. Giữ ở MR25: bộ MR24 không có nguồn nào trong blocklist nên không đo được — đây là quyết định của quản trị viên, không phải ước lượng thống kê."
     ),
 )
 def blocklist_hit(ctx: RuleContext) -> Finding | None:

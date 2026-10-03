@@ -523,10 +523,23 @@ Các mục dưới đây đổi mô hình hoặc quy tắc nên cần đồng ý
     **0,23** (ngược chiều — mạng Việt Nam cực hiếm trong RBA), `ml_geo` 0,93, điểm cuối 0,65. Tỉ lệ phát hiện tấn công (đa số
     100%, kể cả "mô phỏng tinh vi") chưa có ý nghĩa khi nền báo nhầm cao như vậy — việc của MR25–MR26
   - Xong khi: ≥ 30 biến thể mỗi họ; data card riêng ghi rõ dữ liệu tự sinh và giới hạn
-- [ ] **MR25 [Lõi, M] Hiệu chỉnh lại trọng số luật và mức tối thiểu** (tuần 2)
-  - [ ] Trọng số trên bộ MR24 cho 10 luật RBA không đo được (đang 5% mặc định) và 4 luật ra 0% do mẫu nhỏ hoặc do RBA làm nhiễu
-    quốc gia/thời gian; giữ trọng số RBA cho luật đo hợp lệ trên RBA; mỗi trọng số ghi nguồn + khoảng tin cậy
-  - [ ] Chốt `min_action` từng luật xác định theo báo nhầm đo trên lưu lượng hợp lệ khó
+- [x] **MR25 [Lõi, M] Hiệu chỉnh lại trọng số luật và mức tối thiểu** (tuần 2) — chi tiết và số đo:
+  [`rule-recalibration.md`](rule-recalibration.md)
+  - [x] Trọng số trên bộ MR24 cho 9/10 luật RBA không đo được và 3/4 luật ra 0% (`blocklist_hit` không có mẫu,
+    `multi_context_simultaneous` < 20 lần khớp — giữ nguyên); giữ trọng số RBA cho 5 luật đo hợp lệ trên RBA; mọi trọng số ghi
+    `source` + khoảng tin cậy. Đo bằng tỉ số khả năng quy về tỉ lệ tấn công của RBA (π = 6,32%), bootstrap theo biến thể; hai
+    trần theo ngưỡng hành động: luật đo trên bộ tự dựng một mình chỉ đủ `alert` (≤ 0,57), VPN/datacenter một mình không cảnh
+    báo (≤ 0,31). Nhóm danh tiếng gộp bằng max (cùng một IP). Phát lại ngoại tuyến khớp hành động thật 4.738/4.756 lần thử
+    (18 khác đều do đổi max, 0 không giải thích được)
+  - [x] Chốt `min_action`: giữ cả năm mức của MR21. `credential_stuffing`, `impossible_travel`: 0 lần thử hợp lệ bị ép;
+    `success_after_failures` (step_up) và `brute_force` (alert): 1,5% / 1,85% — toàn bộ là "quên mật khẩu", số lần sai một
+    mình không phân biệt được với dò mật khẩu ngắn (bỏ mức ép của `brute_force`: "nhập sai 5 lần" không còn cảnh báo nào)
+  - **Kết quả** (bộ đánh giá): phát hiện trung bình 15 họ tấn công 89,3% → 95,1% (chỉ luật 58,4% → 71,8%); lần thử hợp lệ bị
+    cảnh báo không đổi: chỉ luật 3,4%, mọi nguồn 33,5%. 20 kịch bản: thêm 4 kịch bản bị bắt (dò danh sách tài khoản, bot UA,
+    Tor, nhảy quốc gia), 3 kịch bản hợp lệ không đổi, cảnh báo 40 → 44
+  - ⚠️ **Chưa đạt ≤ 1%**: lớp luật 3,4% (ca "quên mật khẩu", cố ý); mọi nguồn 33,5% do `hybrid_cp2` → MR26. Người dùng VPN hợp
+    lệ bị xác thực thêm/khoá 29 → 44/61 lần thử (trọng số datacenter cộng lên nền 0,45–0,67 của `hybrid_cp2`) — đo lại sau
+    MR26. Ứng viên MR27–MR30: phân biệt "quên mật khẩu" bằng máy/vị trí quen (kiểu smart lockout)
   - Xong khi: báo nhầm trên bộ đánh giá ≤ 1% đăng nhập hợp lệ; bảng trước/sau cho từng luật
 - [ ] **MR26 [Lõi, M] Hiệu chỉnh cho người dùng Việt Nam + sức khoẻ mô hình có ý nghĩa** (tuần 3)
   - [ ] Hiệu chỉnh lại ánh xạ điểm → xác suất của `hybrid_cp2` trên lưu lượng hợp lệ kiểu Việt Nam (không train lại, số đo trên
