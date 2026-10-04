@@ -8,6 +8,13 @@ Mỗi lần thử ghi: hành động, điểm, luật đã khớp (kèm shadow),
 MR25/MR26 tính lại điểm với trọng số/ngưỡng khác mà không chạy lại pipeline. `--with-model-inputs` (MR26) ghi thêm điểm THÔ của
 `hybrid_cp2` (trước ánh xạ điểm -> xác suất), xác suất đuôi từng thành phần và 50 đặc trưng.
 
+MR28: tái hiện CỬA của `POST /login` bằng chính các hàm của nó (`app/detection/gate.py`) — tài khoản/IP đang bị khoá thì lần thử bị từ chối
+ngay, không qua pipeline (ghi `"gated": true`, hành động `lock`); bước `otp_fail` ghi một lần gửi sai mã OTP như `POST /login/verify-otp`.
+Biến thể có thể mang khoá có sẵn (`Variant.locks`). Phép đo chỉ tính lần thử ĐƯỢC CHẤM (`scored`): bỏ bước OTP và lần thử bị từ chối ở cửa.
+Hai chế độ cửa (`--gate`): `setup` (mặc định) — chỉ khoá DỰNG SẴN của kịch bản chặn ở cửa; khoá do pipeline tạo trong biến thể chỉ là bằng
+chứng `blocklist_hit` như MR24–MR27 — để đo "tín hiệu riêng của hành vi có bắt được không" mà không bị tín hiệu khác chặn kẻ tấn công trước;
+`full` — mọi khoá còn hiệu lực đều chặn, như hệ thống chạy thật (số đo của cả hệ thống).
+
     cd backend
     venv\\Scripts\\python.exe -m ml.corpus.run --split both --workers 6
     venv\\Scripts\\python.exe -m ml.corpus.run --split both --with-model-inputs --out-dir ml/artifacts/corpus/mr26
@@ -30,6 +37,13 @@ BASE_TS = datetime(2026, 3, 2, 0, 0, tzinfo=timezone.utc)  # 00:00 UTC của "ng
 
 _capture: list = []
 _pools = None
+_gate_mode = "setup"
+SETUP_LOCK_REASON = "khoá có sẵn của kịch bản (MR28)"
+
+
+def scored(step: dict) -> bool:
+    """Lần thử đi qua pipeline (được chấm) — không phải bước gửi mã OTP, không bị cửa `/login` từ chối vì đang khoá (MR28)."""
+    return step.get("kind", "login") == "login" and not step.get("gated", False)
 
 
 def _model_inputs(engine, features) -> dict:
@@ -49,9 +63,10 @@ def _model_inputs(engine, features) -> dict:
     }
 
 
-def _init_worker(with_model_inputs: bool = False) -> None:
+def _init_worker(with_model_inputs: bool = False, gate_mode: str = "setup") -> None:
     """Một lần mỗi tiến trình: nạp mô hình hybrid, tình báo, kho IP; bọc HybridEngine.evaluate để ghi bằng chứng."""
-    global _pools
+    global _pools, _gate_mode
+    _gate_mode = gate_mode
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
@@ -101,10 +116,11 @@ def _run_variant(args: tuple[str, int]) -> dict:
     import app.detection.pipeline as pipeline
     import app.detection.rate_counter as rate_counter
     from app.database import Base
+    from app.detection import gate
     from app.detection.baseline import record_known_device_if_new, record_known_location_if_new, update_baseline_after_successful_login
     from app.detection.login_context import invalidate_global_counts
     from app.detection.rule_engine_runtime import invalidate_blocklist_cache, invalidate_rule_config_cache
-    from app.models import Alert, LoginEvent, User
+    from app.models import Alert, BlocklistEntry, LoginEvent, User
     from app.utils.device import compute_device_fingerprint
     from ml.corpus.families import build_variant
 
@@ -138,24 +154,45 @@ def _run_variant(args: tuple[str, int]) -> dict:
         update_baseline_after_successful_login(db, user, event)
         record_known_device_if_new(db, user, event.device_fingerprint, h.user_agent)
         record_known_location_if_new(db, user, event.country, event.city)
+    for lock in variant.locks:  # MR28: khoá có sẵn (vd hệ thống vừa tự khoá) — như mục pipeline tự thêm (`added_by="system"`, có hạn dùng)
+        db.add(BlocklistEntry(kind=lock.kind, value=lock.value.lower() if lock.kind == "username" else lock.value,
+                              reason=SETUP_LOCK_REASON, added_by="system", expires_at=BASE_TS + timedelta(seconds=lock.until_s)))
     db.commit()
+    invalidate_blocklist_cache()
     user_ids = {name: u.id for name, u in users.items()}
     db.close()
 
     steps = []
     for i, s in enumerate(variant.steps):
-        _capture.clear()
-        result = pipeline._run_detection_pipeline_sync(
-            username=s.username, user_id=user_ids.get(s.username), success=s.success, ip=s.ip.ip, user_agent=s.user_agent,
-            timestamp=BASE_TS + timedelta(seconds=s.offset_s),
-        )
-        evidence = _capture[-1] if _capture else {}
-        steps.append({
-            "i": i, "username": s.username, "known_account": s.username in user_ids, "success": s.success,
+        at = BASE_TS + timedelta(seconds=s.offset_s)
+        base = {
+            "i": i, "kind": s.kind, "username": s.username, "known_account": s.username in user_ids, "success": s.success,
             "ip": s.ip.ip, "pool": s.ip.pool, "country": s.ip.country, "asn": s.ip.asn, "ua": s.user_agent[:60],
             "offset_s": round(s.offset_s, 1), "malicious": s.malicious,
-            "action": result.hybrid_action, "score": result.hybrid_risk_score, **evidence,
-        })
+        }
+        if s.kind == "otp_fail":  # như `POST /login/verify-otp` gửi sai mã (MR28)
+            if s.username in user_ids:
+                gate.record_otp_failure(user_ids[s.username], at)
+            steps.append({**base, "action": None, "score": None})
+            continue
+        gdb = factory()
+        try:  # cửa của `POST /login` (MR16 + MR28): đang bị khoá thì từ chối ngay, ghi bộ đếm, không chấm
+            entry = gate.blocking_entry(gdb, username=s.username, ip=s.ip.ip, at=at)
+            if entry is not None and _gate_mode == "setup" and entry.reason != SETUP_LOCK_REASON:
+                entry = None  # chế độ `setup`: khoá do pipeline tạo không chặn ở cửa (xem docstring module)
+            if entry is not None:
+                gate.reject_blocked(gdb, username=s.username, ip=s.ip.ip, entry=entry, at=at)
+        finally:
+            gdb.close()
+        if entry is not None:  # `gate`: khoá dựng sẵn của kịch bản ("setup") hay khoá hệ thống vừa tạo trong biến thể ("system")
+            steps.append({**base, "gated": True, "gate": "setup" if entry.reason == SETUP_LOCK_REASON else "system", "action": "lock", "score": None})
+            continue
+        _capture.clear()
+        result = pipeline._run_detection_pipeline_sync(
+            username=s.username, user_id=user_ids.get(s.username), success=s.success, ip=s.ip.ip, user_agent=s.user_agent, timestamp=at,
+        )
+        evidence = _capture[-1] if _capture else {}
+        steps.append({**base, "action": result.hybrid_action, "score": result.hybrid_risk_score, **evidence})
     db = factory()
     alerts = db.query(Alert).count()
     events = db.query(LoginEvent).filter(LoginEvent.is_synthetic.is_(False)).count()
@@ -177,7 +214,7 @@ def summarize(records: list[dict]) -> dict:
         if kind == "attack":
             detected, strong, first = 0, 0, []
             for r in rows:
-                mal = [s for s in r["steps"] if s["malicious"]]
+                mal = [s for s in r["steps"] if s["malicious"] and scored(s)]
                 hit = [k for k, s in enumerate(mal) if s["action"] not in (None, "allow")]
                 detected += bool(hit)
                 strong += any(s["action"] in ("step_up", "lock") for s in mal)
@@ -188,12 +225,12 @@ def summarize(records: list[dict]) -> dict:
                            "median_first_detected_step": statistics.median(first) if first else None,
                            "alerts_per_variant": round(statistics.mean(r["alerts"] for r in rows), 2)}
         else:
-            attempts = [s for r in rows for s in r["steps"]]
+            attempts = [s for r in rows for s in r["steps"] if scored(s)]
             flagged = [s for s in attempts if s["action"] not in (None, "allow")]
             out[family] = {"kind": kind, "variants": len(rows), "attempts": len(attempts),
                            "attempt_alert_rate": round(len(flagged) / len(attempts), 3),
                            "attempt_step_up_or_lock_rate": round(sum(s["action"] in ("step_up", "lock") for s in attempts) / len(attempts), 3),
-                           "variants_with_any_alert": round(sum(any(s["action"] not in (None, "allow") for s in r["steps"]) for r in rows) / len(rows), 3)}
+                           "variants_with_any_alert": round(sum(any(s["action"] not in (None, "allow") for s in r["steps"] if scored(s)) for r in rows) / len(rows), 3)}
     return out
 
 
@@ -207,6 +244,7 @@ def main() -> None:
     parser.add_argument("--families", nargs="*", default=None)
     parser.add_argument("--with-model-inputs", action="store_true", help="ghi thêm điểm thô, xác suất đuôi, đặc trưng của hybrid_cp2 (MR26)")
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
+    parser.add_argument("--gate", choices=("setup", "full"), default="setup", help="cửa /login chặn khoá dựng sẵn (setup) hay mọi khoá (full) — MR28")
     args = parser.parse_args()
 
     out_dir = args.out_dir
@@ -217,7 +255,7 @@ def main() -> None:
     for split in splits:
         jobs = [(family, SPLIT_SEEDS[split][i]) for family in families for i in range(args.per_family)]
         started = time.perf_counter()
-        with mp.get_context("spawn").Pool(args.workers, initializer=_init_worker, initargs=(args.with_model_inputs,)) as pool:
+        with mp.get_context("spawn").Pool(args.workers, initializer=_init_worker, initargs=(args.with_model_inputs, args.gate)) as pool:
             records = pool.map(_run_variant, jobs, chunksize=4)
         with (out_dir / f"{split}.jsonl").open("w", encoding="utf-8") as f:
             for r in records:

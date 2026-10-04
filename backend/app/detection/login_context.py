@@ -178,12 +178,15 @@ class AccountSnapshot:
             return None
         countries: list[str] = []
         devices: list[str] = []
+        ips: list[str] = []
         for group in self.success_groups:
             if group.country and group.country not in countries:
                 countries.append(group.country)
             hashed = ua_hash(group.user_agent)
             if hashed and hashed not in devices:
                 devices.append(hashed)
+            if group.ip and group.ip not in ips:
+                ips.append(group.ip)
         return AccountHistory(
             last_event_ts=ensure_utc(self.last_at).timestamp(),
             last_event_lat=self.last_latitude,
@@ -192,6 +195,7 @@ class AccountSnapshot:
             n_success=self.n_success,
             known_countries=tuple(countries),
             known_devices=tuple(devices),
+            known_ips=tuple(ips),
         )
 
 

@@ -106,3 +106,51 @@ def test_mr27_families_stay_in_the_region_or_pattern_they_claim(pools):
         assert relogin.kind == "benign" and all(s.success for s in relogin.steps) and len(relogin.steps) <= 8
         office = build_variant("office_nat_day", seed, pools)
         assert len({s.ip.ip for s in office.steps}) == 1 and len({s.username for s in office.steps if not s.success}) >= 5
+
+
+def test_mr28_families_model_otp_rounds_preexisting_locks_and_shared_ips(pools):
+    for seed in range(10):
+        guess = build_variant("otp_guessing", seed, pools)
+        assert sum(s.kind == "otp_fail" for s in guess.steps) % 5 == 0 and guess.steps[-1].kind == "login"  # mỗi mã hết lượt sau 5 lần
+        hammer = build_variant("locked_hammering", seed, pools)
+        (lock,) = hammer.locks
+        assert lock.kind == "username" and any(s.offset_s > lock.until_s for s in hammer.steps)  # còn thử sau khi khoá hết hạn
+        owner = build_variant("locked_owner", seed, pools)
+        assert owner.kind == "benign" and owner.steps[-1].offset_s > owner.locks[0].until_s and len(owner.steps) - 1 <= 8
+        typo = build_variant("otp_typo", seed, pools)
+        assert sum(s.kind == "otp_fail" for s in typo.steps) <= 7
+        wifi = build_variant("event_wifi", seed, pools)
+        assert len({s.ip.ip for s in wifi.steps}) == 1 and {s.user_agent for s in wifi.steps} <= {h.user_agent for h in wifi.history}
+
+
+def test_the_corpus_runner_reproduces_the_login_door_for_locks_and_otp_failures(pools, monkeypatch):
+    """MR28: lần thử vào tài khoản đang bị khoá bị cửa `/login` từ chối (không chấm) và được đếm; hết khoá thì `blocked_retry` chấm. Ở chế độ
+    `setup`, chỉ khoá dựng sẵn của kịch bản chặn ở cửa. Lần gửi sai OTP được đếm như `POST /login/verify-otp`."""
+    import app.detection.pipeline as pipeline
+    import app.detection.rate_counter as rate_counter
+    from app.detection import hybrid_runtime
+    from ml.corpus import run
+
+    monkeypatch.setattr(pipeline, "SessionLocal", pipeline.SessionLocal)
+    monkeypatch.setattr(rate_counter, "redis_client", rate_counter.redis_client)
+    monkeypatch.setattr(hybrid_runtime.HybridEngine, "evaluate", hybrid_runtime.HybridEngine.evaluate)
+    monkeypatch.setattr(hybrid_runtime, "_engine", hybrid_runtime._engine)
+    monkeypatch.setattr(run, "_gate_mode", run._gate_mode)
+    try:
+        run._init_worker(False, "setup")
+    except RuntimeError as exc:
+        pytest.skip(str(exc))
+
+    hammer = run._run_variant(("locked_hammering", 0))
+    gated = [s for s in hammer["steps"] if s.get("gated")]
+    after = [s for s in hammer["steps"] if run.scored(s)]
+    assert gated and all(s["action"] == "lock" and "hits" not in s for s in gated)
+    assert after and any(h[0] == "blocked_retry" for h in after[-1]["hits"]) and after[-1]["action"] in ("step_up", "lock")
+
+    owner = run._run_variant(("locked_owner", 0))
+    assert not any(h[0] == "blocked_retry" for s in owner["steps"] if run.scored(s) for h in s["hits"])
+
+    guess = run._run_variant(("otp_guessing", 1))  # 4 lượt × 5 mã sai
+    assert sum(s["kind"] == "otp_fail" for s in guess["steps"]) == 20
+    last = [s for s in guess["steps"] if run.scored(s)][-1]
+    assert any(h[0] == "otp_guessing" for h in last["hits"]) and last["action"] == "lock"

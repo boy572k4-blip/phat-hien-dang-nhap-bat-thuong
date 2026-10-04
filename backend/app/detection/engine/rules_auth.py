@@ -262,3 +262,118 @@ def success_after_failures(ctx: RuleContext) -> Finding | None:
         f"Đăng nhập thành công '{a.username}' sau {fails} lần sai/{window_text(p.window_s)} từ {ips} IP (có thể đã đoán trúng mật khẩu).",
         {"username": a.username, "fails_before": fails, "distinct_ips_before": ips, "window_s": p.window_s},
     )
+
+
+# ------------------------------------------------------------------------------------------------ MR28: ba hành vi mới
+
+
+@rule(
+    id="otp_guessing",
+    title="Đoán mã OTP liên tục",
+    category=CATEGORY,
+    severity="high",
+    techniques=("T1110",),
+    description=(
+        "Một tài khoản nhập SAI mã xác thực thêm (OTP) nhiều lần, qua nhiều lượt đăng nhập — người đang có mật khẩu đúng nhưng không có mã: "
+        "mật khẩu gần như chắc chắn đã lộ."
+    ),
+    params=(
+        Param("window_s", _DAY, "độ dài cửa sổ", "giây", 600, _DAY),
+        Param("min_failures", 10, "số lần nhập sai mã tối thiểu (mỗi mã cho 5 lần — 10 là hết lượt hai mã)", "lần", 1, 100_000),
+    ),
+    needs=("account",),
+    min_action="lock",
+    notes=(
+        "MR28. Lần nhập sai mã ghi từ `POST /login/verify-otp` (trước MR28 chỉ tăng bộ đếm của từng mã, không ai đọc); mã hết lượt buộc đăng nhập lại "
+        "để lấy mã mới, nên luật chấm ở lần đăng nhập KẾ TIẾP và ép khoá — mỗi mã cho 5 lần đoán, sau hai mã là khoá 30 phút: đoán 6 chữ số trở thành "
+        "bất khả thi. Ngưỡng 10 đặt trước khi đo: một mã hết lượt có thể là chính chủ đọc nhầm mã cũ, hai mã liên tiếp thì gần như chắc là kẻ có mật "
+        "khẩu. Không đo được trên RBA (không có bước OTP); số đo trên bộ MR24: docs/behavior-expansion-2.md."
+    ),
+)
+def otp_guessing(ctx: RuleContext) -> Finding | None:
+    a, p = ctx.attempt, ctx.p
+    if a.user_key is None:
+        return None
+    failures = ctx.store.log_count(K.otp_fail_user(a.user_key), ctx.since(p.window_s))
+    if failures < p.min_failures:
+        return None
+    return Finding(
+        f"Tài khoản '{a.username}' nhập sai mã OTP {failures} lần/{window_text(p.window_s)} — người thử có mật khẩu đúng nhưng không có mã "
+        f"(mật khẩu có thể đã lộ, ngưỡng {p.min_failures}).",
+        {"username": a.username, "otp_failures": failures, "window_s": p.window_s},
+    )
+
+
+@rule(
+    id="blocked_retry",
+    title="Tiếp tục thử khi đang bị khoá",
+    category=CATEGORY,
+    severity="medium",
+    techniques=("T1110",),
+    description=(
+        "Nhiều lần thử vào một tài khoản (hoặc từ một IP) trong lúc nó đang bị khoá — bị từ chối ngay ở cửa nhưng vẫn tiếp tục: kẻ tấn công kiên "
+        "trì (người thật thường thử lại vài lần rồi chờ)."
+    ),
+    params=(
+        Param("window_s", 3600, "độ dài cửa sổ (khoá tự động kéo dài 30 phút)", "giây", 600, _DAY),
+        Param("min_attempts", 10, "số lần bị từ chối tối thiểu trong cửa sổ", "lần", 1, 100_000),
+    ),
+    min_action="step_up",
+    notes=(
+        "MR28. Lần thử bị từ chối vì khoá KHÔNG qua pipeline (`POST /login` trả 423 ngay, trước cả bước kiểm tra mật khẩu) — chỉ được ghi vào bộ đếm, "
+        "nên luật chấm ở lần thử ĐẦU TIÊN sau khi khoá hết hạn. Ép xác thực thêm chứ không khoá lại: chủ tài khoản có mã OTP qua được, kẻ chỉ có mật "
+        "khẩu thì không; khoá lại sẽ cho kẻ tấn công cách giữ chủ tài khoản bị khoá mãi. Ngưỡng 10 đặt trước khi đo. Không đo được trên RBA (không có "
+        "khoá); số đo trên bộ MR24: docs/behavior-expansion-2.md."
+    ),
+)
+def blocked_retry(ctx: RuleContext) -> Finding | None:
+    a, p = ctx.attempt, ctx.p
+    since = ctx.since(p.window_s)
+    by_user = ctx.store.log_count(K.blocked_user(a.username), since)
+    if by_user >= p.min_attempts:
+        return Finding(
+            f"Tài khoản '{a.username}' bị thử {by_user} lần trong lúc đang bị khoá/{window_text(p.window_s)} (ngưỡng {p.min_attempts}).",
+            {"scope": "username", "username": a.username, "blocked_attempts": by_user, "window_s": p.window_s},
+        )
+    by_ip = ctx.store.log_count(K.blocked_ip(a.ip), since)
+    if by_ip >= p.min_attempts:
+        return Finding(
+            f"IP {a.ip} tiếp tục thử {by_ip} lần trong lúc đang bị khoá/{window_text(p.window_s)} (ngưỡng {p.min_attempts}).",
+            {"scope": "ip", "ip": a.ip, "blocked_attempts": by_ip, "window_s": p.window_s},
+        )
+    return None
+
+
+@rule(
+    id="multi_account_success",
+    title="Một IP đăng nhập thành công vào nhiều tài khoản",
+    category=CATEGORY,
+    severity="high",
+    techniques=("T1078", "T1110.004"),
+    description=(
+        "Một IP đăng nhập THÀNH CÔNG vào nhiều tài khoản khác nhau trong thời gian ngắn, mỗi tài khoản đều từ IP VÀ thiết bị chưa từng dùng — kẻ đã "
+        "có danh sách mật khẩu đúng (sau nhồi thông tin) đang vào từng tài khoản."
+    ),
+    params=(
+        Param("window_s", 3600, "độ dài cửa sổ", "giây", 60, _DAY),
+        Param("min_accounts", 5, "số tài khoản tối thiểu vào được từ IP bằng IP và thiết bị đều lạ", "TK", 2, 1000),
+    ),
+    needs=("account",),
+    notes=(
+        "MR28. NAT văn phòng (IP quen với từng người) và wifi hội nghị (thiết bị của chính mình) không tính; chỉ báo khi CHÍNH lần thử này cũng lạ cả "
+        "IP lẫn thiết bị. Giới hạn đã biết: phòng máy đào tạo (IP và máy đều lạ với mọi người) trông giống hệt — cần danh sách mạng nội bộ đáng tin. "
+        "Ngưỡng 5 tài khoản/giờ đặt trước khi đo; số đo: docs/behavior-expansion-2.md."
+    ),
+)
+def multi_account_success(ctx: RuleContext) -> Finding | None:
+    a, p = ctx.attempt, ctx.p
+    if not a.success or a.user_key is None or not K.is_new_context(a, ctx.history):
+        return None
+    accounts = ctx.store.set_count(K.new_context_users_of_ip(a.ip), ctx.since(p.window_s), K.CAP)
+    if accounts < p.min_accounts:
+        return None
+    return Finding(
+        f"IP {a.ip} đăng nhập thành công vào {accounts} tài khoản/{window_text(p.window_s)}, mỗi tài khoản từ IP và thiết bị lạ "
+        f"(ngưỡng {p.min_accounts}).",
+        {"ip": a.ip, "accounts": accounts, "window_s": p.window_s},
+    )

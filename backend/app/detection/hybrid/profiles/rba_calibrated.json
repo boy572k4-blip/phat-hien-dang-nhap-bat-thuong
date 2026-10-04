@@ -193,10 +193,40 @@
     "calibrated": true,
     "n": 165,
     "ci95": [
-     0.7208,
-     0.9674
+     0.7416,
+     0.9694
     ],
     "source": "corpus_mr24_capped"
+   },
+   "otp_guessing": {
+    "weight": 0.57,
+    "calibrated": true,
+    "n": 45,
+    "ci95": [
+     0.7925,
+     0.9087
+    ],
+    "source": "corpus_mr24_capped"
+   },
+   "blocked_retry": {
+    "weight": 0.57,
+    "calibrated": true,
+    "n": 27,
+    "ci95": [
+     0.7076,
+     0.8525
+    ],
+    "source": "corpus_mr24_capped"
+   },
+   "multi_account_success": {
+    "weight": 0.0564,
+    "calibrated": true,
+    "n": 230,
+    "ci95": [
+     0.0321,
+     0.099
+    ],
+    "source": "corpus_mr24"
    }
   },
   "default_weight": 0.05

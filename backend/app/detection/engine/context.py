@@ -54,6 +54,8 @@ class MemoryHistory:
                 h.known_countries += (sys.intern(attempt.country),)  # intern: hàng triệu tài khoản dùng chung vài trăm mã quốc gia/UA phổ biến
             if attempt.ua_hash and attempt.ua_hash not in h.known_devices:
                 h.known_devices += (sys.intern(attempt.ua_hash),)
+            if attempt.ip not in h.known_ips:
+                h.known_ips += (attempt.ip,)
 
 
 class MemoryGlobalStats:

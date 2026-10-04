@@ -16,6 +16,9 @@ MR16 "Phản ứng tự động (mô phỏng)" đổi đường đi cho HAI trư
      thêm khi đã từ chối rồi — OTP chỉ có ý nghĩa SAU KHI mật khẩu đã đúng).
 
 `POST /login/verify-otp` hoàn tất bước xác thực thêm ở (2).
+
+MR28: hai loại lần thử không qua pipeline — bị từ chối vì đang khoá ở (1), và nhập sai mã OTP — được ghi vào bộ đếm của rule engine qua
+`app/detection/gate.py` (luật `blocked_retry`, `otp_guessing` chấm ở lần đăng nhập kế tiếp).
 """
 
 from datetime import datetime, timezone
@@ -26,10 +29,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.detection.engine.types import LoginAttempt
+from app.detection import gate
 from app.detection.pipeline import run_detection_pipeline
 from app.detection.response_execution import OTP_MAX_ATTEMPTS, OTP_TTL, generate_otp_code, hash_otp_code, otp_code_matches
-from app.detection.rule_engine_runtime import refresh_blocklist
 from app.models import AuditLog, OtpChallenge, ResponseAction, User
 from app.schemas import LoginRequest, LoginResponse, OtpVerifyRequest
 from app.security import verify_password
@@ -57,16 +59,11 @@ async def login(payload: LoginRequest, request: Request, background_tasks: Backg
     # tra ASN ở đây (đắt — cần GeoIP) nên khối chặn theo ASN không bị bắt ở bước này; vẫn được bắt sau khi mật khẩu
     # đúng, ở nhánh `result.hybrid_action == "lock"` bên dưới (pipeline CÓ tra ASN) — precheck chỉ là đường tắt cho các
     # loại rẻ để kiểm (ip/cidr/username), không phải ranh giới an toàn duy nhất.
-    precheck_attempt = LoginAttempt(ts=now.timestamp(), username=payload.username, success=False, ip=ip)
-    block_entry = refresh_blocklist(db).match(precheck_attempt)
+    block_entry = gate.blocking_entry(db, username=payload.username, ip=ip, at=now)
     if block_entry is not None:
-        # Không chạy lại toàn bộ pipeline chấm điểm cho một kết quả đã CHẮC CHẮN là "lock" — nhưng vẫn ghi vết để
-        # quản trị viên thấy được là có người tiếp tục thử vào một tài khoản/IP đang bị khoá.
-        db.add(AuditLog(
-            actor="system", action="reject_blocked_login", target_type="blocklist", target_id=None,
-            detail={"username": payload.username, "ip": ip, "blocklist_kind": block_entry.kind, "blocklist_value": block_entry.value},
-        ))
-        db.commit()
+        # Không chạy lại toàn bộ pipeline chấm điểm cho một kết quả đã CHẮC CHẮN là "lock" — nhưng vẫn ghi vết (audit) để
+        # quản trị viên thấy, và (MR28) ghi vào bộ đếm để luật `blocked_retry` thấy người cứ thử tiếp khi khoá hết hạn.
+        gate.reject_blocked(db, username=payload.username, ip=ip, entry=block_entry, at=now)
         return _locked_response()
 
     user = db.query(User).filter(User.username == payload.username).first()
@@ -122,12 +119,19 @@ def verify_otp(payload: OtpVerifyRequest, db: Session = Depends(get_db)):
     invalid = LoginResponse(success=False, message=_OTP_INVALID_MESSAGE)
 
     # Thông báo GIỐNG NHAU cho mọi lý do thất bại (không tồn tại/đã dùng/hết hạn/quá số lần/sai mã) — không lộ chi tiết.
-    if challenge is None or challenge.verified_at is not None or challenge.attempts >= OTP_MAX_ATTEMPTS or ensure_utc(challenge.expires_at) < now:
+    if challenge is None or challenge.verified_at is not None:
+        return invalid
+
+    # MR28: mọi lần gửi thất bại vào một mã CHƯA dùng đều được ghi (audit + bộ đếm của luật `otp_guessing`) — kể cả gửi tiếp vào mã đã hết
+    # lượt/hết hạn (không tốn bcrypt cho các lần đó, như trước).
+    if challenge.attempts >= OTP_MAX_ATTEMPTS or ensure_utc(challenge.expires_at) < now:
+        reason = "exhausted" if challenge.attempts >= OTP_MAX_ATTEMPTS else "expired"
+        gate.otp_failed(db, challenge_id=challenge.id, user_id=challenge.user_id, attempts=challenge.attempts, reason=reason, at=now)
         return invalid
 
     if not otp_code_matches(payload.code, challenge.code_hash):
         challenge.attempts += 1
-        db.commit()
+        gate.otp_failed(db, challenge_id=challenge.id, user_id=challenge.user_id, attempts=challenge.attempts, reason="wrong_code", at=now)
         return invalid
 
     challenge.verified_at = now

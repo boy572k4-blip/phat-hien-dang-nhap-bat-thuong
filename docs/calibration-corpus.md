@@ -54,6 +54,14 @@ Thêm 2 họ tấn công (`distributed_botnet_local` — botnet IP Việt Nam nh
 một lần): 29 họ, 870 biến thể mỗi phần. Bản chạy mở rộng ghi ra `ml/artifacts/corpus/mr27/` — bản MR24 (`ml/artifacts/corpus/*.jsonl`)
 giữ nguyên vì số "trước" của MR25 dựa trên nó. Mỗi luật khớp ghi thêm cờ `forces` (MR27). Số đo: [`behavior-expansion-1.md`](behavior-expansion-1.md).
 
+## Mở rộng ở MR28
+
+Thêm 3 họ tấn công (`otp_guessing`, `locked_hammering`, `account_checker`) và 4 họ hợp lệ khó (`otp_typo`, `locked_owner`, `training_lab`,
+`event_wifi`): 36 họ, 1.080 biến thể mỗi phần. Bước mới `kind="otp_fail"` (gửi sai mã OTP), khoá dựng sẵn `Variant.locks`; bộ chạy tái hiện
+cửa `/login` bằng chính `app/detection/gate.py`, hai chế độ `--gate setup` (chỉ khoá dựng sẵn chặn ở cửa — đo "vững") và `--gate full`
+(mọi khoá chặn — như chạy thật). Phép đo chỉ tính lần thử được chấm (bỏ bước OTP và lần bị cửa từ chối). Bản chạy: `ml/artifacts/corpus/mr28/`,
+`mr28_full/`. Số đo: [`behavior-expansion-2.md`](behavior-expansion-2.md).
+
 ## Giới hạn
 
 - Hành vi của kẻ tấn công và người dùng do nhóm định nghĩa — ví dụ kẻ tấn công thường dùng IP nước ngoài/ẩn danh, người dùng

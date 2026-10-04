@@ -98,7 +98,7 @@ def test_family_is_none_when_there_is_no_contribution_at_all():
 def test_every_registered_rule_maps_to_its_own_category_with_full_confidence_when_it_leads():
     """Vét cạn TOÀN BỘ luật đã đăng ký (không chỉ vài mẫu) — hồi quy nếu ai thêm luật mới mà quên nhóm nó đúng 4
     CATEGORIES hiện có."""
-    assert len(REGISTRY) == 20  # 19 luật của MR9 + `success_burst` (MR27) — đổi số này thì phải cập nhật kịch bản của alert_intelligence_sim.py
+    assert len(REGISTRY) == 23  # 19 luật của MR9 + `success_burst` (MR27) + 3 luật MR28 — đổi số này thì phải cập nhật kịch bản của alert_intelligence_sim.py
     for rule_id, spec in REGISTRY.items():
         group = "reputation" if spec.category == "Danh tiếng hạ tầng" else "rule"
         contribution = Contribution(rule_id, spec.title, 0.77, group)

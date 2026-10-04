@@ -1,5 +1,8 @@
 # Phản ứng tự động — mô phỏng toàn bộ luồng (MR16)
 
+> **MR28:** lần thử bị từ chối vì đang khoá và lần sai mã OTP giờ được đếm cho hai luật `blocked_retry` (xác thực thêm khi khoá hết hạn) và
+> `otp_guessing` (khoá khi sai ≥ 10 mã/24 giờ) — xem [`behavior-expansion-2.md`](behavior-expansion-2.md). Số đo dưới đây là ảnh chụp của MR16.
+
 Chạy qua HTTP thật (`TestClient`, không bỏ qua router như các script MR13-15) — mã nguồn: [`backend/scripts/automated_response_sim.py`](../backend/scripts/automated_response_sim.py). Cơ chế: [`app/detection/response_execution.py`](../backend/app/detection/response_execution.py), [`app/routers/auth.py`](../backend/app/routers/auth.py), [`app/routers/blocklist.py`](../backend/app/routers/blocklist.py).
 
 ## Kịch bản 1 — Khoá tự động (lock)

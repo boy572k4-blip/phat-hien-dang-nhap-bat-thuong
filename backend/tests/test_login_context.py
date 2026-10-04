@@ -36,16 +36,16 @@ BASE = datetime(2026, 3, 1, tzinfo=timezone.utc)
 
 
 def _old_account_history(db, user_id, before):
-    """Nguyên văn `DbAccountHistory.get` trước MR20: nạp MỌI dòng của tài khoản rồi duyệt trong Python."""
+    """Nguyên văn `DbAccountHistory.get` trước MR20: nạp MỌI dòng của tài khoản rồi duyệt trong Python (+ IP quen, MR28)."""
     rows = db.execute(
-        select(LoginEvent.created_at, LoginEvent.latitude, LoginEvent.longitude, LoginEvent.success, LoginEvent.country, LoginEvent.user_agent)
+        select(LoginEvent.created_at, LoginEvent.latitude, LoginEvent.longitude, LoginEvent.success, LoginEvent.country, LoginEvent.user_agent, LoginEvent.ip_address)
         .where(LoginEvent.user_id == user_id, LoginEvent.created_at < before)
         .order_by(LoginEvent.created_at)
     ).all()
     if not rows:
         return None
     history = AccountHistory()
-    for created_at, lat, lon, success, country, agent in rows:
+    for created_at, lat, lon, success, country, agent, ip in rows:
         history.last_event_ts = ensure_utc(created_at).timestamp()
         history.last_event_lat, history.last_event_lon = lat, lon
         if success:
@@ -56,6 +56,8 @@ def _old_account_history(db, user_id, before):
             hashed = ua_hash(agent)
             if hashed and hashed not in history.known_devices:
                 history.known_devices += (hashed,)
+            if ip and ip not in history.known_ips:
+                history.known_ips += (ip,)
     return history
 
 

@@ -168,6 +168,16 @@ Tổng hợp 26 hành vi: **vững 21**, **phụ thuộc hoàn cảnh 2** (nhi�
 VPN — cố ý), **mơ hồ có chủ đích 1**. ⚠️ "Dò mật khẩu một tài khoản" và "thành công sau chuỗi sai" vững theo định nghĩa gộp nhưng với riêng
 họ "quên mật khẩu" báo nhầm 11–14% (đếm số lần sai không phân biệt được).
 
+## Cập nhật sau MR28
+
+MR28 ([`behavior-expansion-2.md`](behavior-expansion-2.md)) thêm 3 hành vi: **đoán mã OTP liên tục** — vững (83%, 0% báo nhầm, luật
+`otp_guessing` → khoá); **cố đăng nhập khi đang bị khoá** — vững (83%, 0%, `blocked_retry` → xác thực thêm khi hết khoá); **một IP đăng
+nhập thành công vào nhiều tài khoản** — phụ thuộc hoàn cảnh (luật `multi_account_success` chỉ là bằng chứng: phòng máy đào tạo trông giống
+hệt; kẻ tấn công vẫn bị bắt 100% nhờ tín hiệu khác). 16/21 hành vi đo được trên bộ dữ liệu vững.
+
+Tổng hợp 29 hành vi: **vững 23**, **phụ thuộc hoàn cảnh 3** (nhiều quốc gia cùng lúc, proxy cùng nước, một IP vào nhiều tài khoản),
+**không cảnh báo 2** (datacenter, VPN — cố ý), **mơ hồ có chủ đích 1**.
+
 ## Nguồn dữ liệu
 
 Mọi con số trong bảng lấy TRỰC TIẾP từ tài liệu đã dẫn — không tính lại riêng cho bảng này. `[Đo được thật]` nghĩa là

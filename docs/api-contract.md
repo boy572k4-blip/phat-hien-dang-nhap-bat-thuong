@@ -114,6 +114,10 @@ Response 423 (MR16 — tài khoản hoặc IP nguồn đang bị khoá tạm; t�
 
 ### `POST /login/verify-otp` (MR16)
 
+MR28: mỗi lần gửi thất bại vào một mã chưa dùng (sai mã, mã đã hết lượt, mã hết hạn) ghi audit `verify_otp_failed` và bộ đếm của luật
+`otp_guessing` (≥ 10 lần/24 giờ → lần đăng nhập kế tiếp bị khoá). Tương tự, mỗi lần `POST /login` trả 423 vì đang bị khoá được đếm cho
+luật `blocked_retry` (xác thực thêm ở lần thử đầu tiên sau khi khoá hết hạn). Response không đổi.
+
 Request:
 ```json
 { "challenge_id": 42, "code": "042857" }

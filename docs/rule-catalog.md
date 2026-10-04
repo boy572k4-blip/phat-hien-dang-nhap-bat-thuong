@@ -6,7 +6,7 @@ Mã: [`backend/app/detection/engine/`](../backend/app/detection/engine/) · ki�
 
 ## 1. Tổng quan
 
-**20 luật** trong 4 nhóm; 15 luật mặc định ở chế độ `enforce`, 5 ở chế độ `shadow` (`regular_rhythm`, `country_hop`, `rare_network_login`, `datacenter_ip`, `vpn_ip`) vì chưa được kiểm chứng trên log thật hoặc dễ báo nhầm. 6 luật xác định mang **hành động tối thiểu** (`brute_force`, `credential_stuffing`, `password_spray_slow`, `success_after_failures`, `impossible_travel`, `blocklist_hit`).
+**23 luật** trong 4 nhóm; 18 luật mặc định ở chế độ `enforce`, 5 ở chế độ `shadow` (`regular_rhythm`, `country_hop`, `rare_network_login`, `datacenter_ip`, `vpn_ip`) vì chưa được kiểm chứng trên log thật hoặc dễ báo nhầm. 8 luật xác định mang **hành động tối thiểu** (`brute_force`, `credential_stuffing`, `password_spray_slow`, `success_after_failures`, `otp_guessing`, `blocked_retry`, `impossible_travel`, `blocklist_hit`).
 
 | Mã | Tên | Nhóm | Mức | Chế độ mặc định | Hành động tối thiểu | MITRE ATT&CK |
 |---|---|---|---|---|---|---|
@@ -16,6 +16,9 @@ Mã: [`backend/app/detection/engine/`](../backend/app/detection/engine/) · ki�
 | [`distributed_bruteforce`](#distributed_bruteforce) | Dò mật khẩu phân tán vào một tài khoản | Đoán và dò mật khẩu | cao | enforce | — | T1110.001, T1090 |
 | [`username_enumeration`](#username_enumeration) | Dò danh sách tài khoản | Đoán và dò mật khẩu | trung bình | enforce | — | T1589 |
 | [`success_after_failures`](#success_after_failures) | Thành công sau chuỗi sai | Đoán và dò mật khẩu | cao | enforce | `step_up` | T1110.001 |
+| [`otp_guessing`](#otp_guessing) | Đoán mã OTP liên tục | Đoán và dò mật khẩu | cao | enforce | `lock` | T1110 |
+| [`blocked_retry`](#blocked_retry) | Tiếp tục thử khi đang bị khoá | Đoán và dò mật khẩu | trung bình | enforce | `step_up` | T1110 |
+| [`multi_account_success`](#multi_account_success) | Một IP đăng nhập thành công vào nhiều tài khoản | Đoán và dò mật khẩu | cao | enforce | — | T1078, T1110.004 |
 | [`bot_user_agent`](#bot_user_agent) | User-Agent là bot | Tự động hoá | thấp | enforce | — | T1110 |
 | [`scripted_client`](#scripted_client) | Client kịch bản / công cụ | Tự động hoá | trung bình | enforce | — | T1110 |
 | [`ua_rotation`](#ua_rotation) | Xoay User-Agent | Tự động hoá | trung bình | enforce | — | T1110.004 |
@@ -55,11 +58,11 @@ Ghi đè chế độ và tham số theo từng luật bằng JSON (`RuleConfig.f
 
 | Kỹ thuật | Tên | Luật |
 |---|---|---|
-| [T1110](https://attack.mitre.org/techniques/T1110/) | Brute Force | `bot_user_agent`, `scripted_client`, `regular_rhythm` |
+| [T1110](https://attack.mitre.org/techniques/T1110/) | Brute Force | `otp_guessing`, `blocked_retry`, `bot_user_agent`, `scripted_client`, `regular_rhythm` |
 | [T1110.001](https://attack.mitre.org/techniques/T1110/001/) | Brute Force: Password Guessing | `brute_force`, `distributed_bruteforce`, `success_after_failures` |
 | [T1110.003](https://attack.mitre.org/techniques/T1110/003/) | Brute Force: Password Spraying | `password_spray_slow` |
-| [T1110.004](https://attack.mitre.org/techniques/T1110/004/) | Brute Force: Credential Stuffing | `credential_stuffing`, `ua_rotation` |
-| [T1078](https://attack.mitre.org/techniques/T1078/) | Valid Accounts | `success_burst`, `impossible_travel`, `multi_context_simultaneous`, `country_hop`, `dormant_account_login`, `rare_network_login` |
+| [T1110.004](https://attack.mitre.org/techniques/T1110/004/) | Brute Force: Credential Stuffing | `credential_stuffing`, `multi_account_success`, `ua_rotation` |
+| [T1078](https://attack.mitre.org/techniques/T1078/) | Valid Accounts | `multi_account_success`, `success_burst`, `impossible_travel`, `multi_context_simultaneous`, `country_hop`, `dormant_account_login`, `rare_network_login` |
 | [T1090](https://attack.mitre.org/techniques/T1090/) | Proxy | `distributed_bruteforce`, `country_hop`, `vpn_ip` |
 | [T1090.002](https://attack.mitre.org/techniques/T1090/002/) | Proxy: External Proxy | `datacenter_ip` |
 | [T1090.003](https://attack.mitre.org/techniques/T1090/003/) | Proxy: Multi-hop Proxy | `tor_exit` |
@@ -72,7 +75,7 @@ Thiếu dữ liệu thì luật tương ứng bị bỏ qua (xem mục 2).
 
 | Dữ liệu | Ý nghĩa | Luật cần |
 |---|---|---|
-| `account` | tài khoản tồn tại (không phải tên đăng nhập bịa) | `success_after_failures`, `success_burst`, `impossible_travel`, `multi_context_simultaneous`, `dormant_account_login`, `rare_network_login` |
+| `account` | tài khoản tồn tại (không phải tên đăng nhập bịa) | `success_after_failures`, `otp_guessing`, `multi_account_success`, `success_burst`, `impossible_travel`, `multi_context_simultaneous`, `dormant_account_login`, `rare_network_login` |
 | `asn` | ASN của IP (cần file GeoLite2-ASN.mmdb) | `rare_network_login` |
 | `country` | quốc gia của IP (GeoIP) | `multi_context_simultaneous`, `country_hop` |
 | `geo` | toạ độ của IP (GeoLite2-City) | `impossible_travel` |
@@ -181,6 +184,48 @@ Một IP thử nhiều tên đăng nhập KHÔNG tồn tại — dò xem tài kh
 |---|---|---|---|---|
 | `window_s` | `600` | giây | 10–86400 | độ dài cửa sổ nhìn lại |
 | `min_fails` | `5` | lần | 2–100000 | số lần sai tối thiểu trước đó vào tài khoản |
+
+#### <a id="otp_guessing"></a>`otp_guessing` — Đoán mã OTP liên tục
+
+Một tài khoản nhập SAI mã xác thực thêm (OTP) nhiều lần, qua nhiều lượt đăng nhập — người đang có mật khẩu đúng nhưng không có mã: mật khẩu gần như chắc chắn đã lộ.
+
+- **Mức nghiêm trọng:** cao · **chế độ mặc định:** enforce (bằng chứng + được ép hành động tối thiểu) · **hành động tối thiểu:** `lock` (khoá tạm)
+- **MITRE ATT&CK:** T1110 (Brute Force)
+- **Dữ liệu cần:** `account`
+- **Ghi chú:** MR28. Lần nhập sai mã ghi từ `POST /login/verify-otp` (trước MR28 chỉ tăng bộ đếm của từng mã, không ai đọc); mã hết lượt buộc đăng nhập lại để lấy mã mới, nên luật chấm ở lần đăng nhập KẾ TIẾP và ép khoá — mỗi mã cho 5 lần đoán, sau hai mã là khoá 30 phút: đoán 6 chữ số trở thành bất khả thi. Ngưỡng 10 đặt trước khi đo: một mã hết lượt có thể là chính chủ đọc nhầm mã cũ, hai mã liên tiếp thì gần như chắc là kẻ có mật khẩu. Không đo được trên RBA (không có bước OTP); số đo trên bộ MR24: docs/behavior-expansion-2.md.
+
+| Tham số | Mặc định | Đơn vị | Khoảng | Ý nghĩa |
+|---|---|---|---|---|
+| `window_s` | `86400` | giây | 600–86400 | độ dài cửa sổ |
+| `min_failures` | `10` | lần | 1–100000 | số lần nhập sai mã tối thiểu (mỗi mã cho 5 lần — 10 là hết lượt hai mã) |
+
+#### <a id="blocked_retry"></a>`blocked_retry` — Tiếp tục thử khi đang bị khoá
+
+Nhiều lần thử vào một tài khoản (hoặc từ một IP) trong lúc nó đang bị khoá — bị từ chối ngay ở cửa nhưng vẫn tiếp tục: kẻ tấn công kiên trì (người thật thường thử lại vài lần rồi chờ).
+
+- **Mức nghiêm trọng:** trung bình · **chế độ mặc định:** enforce (bằng chứng + được ép hành động tối thiểu) · **hành động tối thiểu:** `step_up` (xác thực thêm)
+- **MITRE ATT&CK:** T1110 (Brute Force)
+- **Dữ liệu cần:** không (chỉ cần `LoginAttempt`)
+- **Ghi chú:** MR28. Lần thử bị từ chối vì khoá KHÔNG qua pipeline (`POST /login` trả 423 ngay, trước cả bước kiểm tra mật khẩu) — chỉ được ghi vào bộ đếm, nên luật chấm ở lần thử ĐẦU TIÊN sau khi khoá hết hạn. Ép xác thực thêm chứ không khoá lại: chủ tài khoản có mã OTP qua được, kẻ chỉ có mật khẩu thì không; khoá lại sẽ cho kẻ tấn công cách giữ chủ tài khoản bị khoá mãi. Ngưỡng 10 đặt trước khi đo. Không đo được trên RBA (không có khoá); số đo trên bộ MR24: docs/behavior-expansion-2.md.
+
+| Tham số | Mặc định | Đơn vị | Khoảng | Ý nghĩa |
+|---|---|---|---|---|
+| `window_s` | `3600` | giây | 600–86400 | độ dài cửa sổ (khoá tự động kéo dài 30 phút) |
+| `min_attempts` | `10` | lần | 1–100000 | số lần bị từ chối tối thiểu trong cửa sổ |
+
+#### <a id="multi_account_success"></a>`multi_account_success` — Một IP đăng nhập thành công vào nhiều tài khoản
+
+Một IP đăng nhập THÀNH CÔNG vào nhiều tài khoản khác nhau trong thời gian ngắn, mỗi tài khoản đều từ IP VÀ thiết bị chưa từng dùng — kẻ đã có danh sách mật khẩu đúng (sau nhồi thông tin) đang vào từng tài khoản.
+
+- **Mức nghiêm trọng:** cao · **chế độ mặc định:** enforce (bằng chứng + được ép hành động tối thiểu)
+- **MITRE ATT&CK:** T1078 (Valid Accounts), T1110.004 (Brute Force: Credential Stuffing)
+- **Dữ liệu cần:** `account`
+- **Ghi chú:** MR28. NAT văn phòng (IP quen với từng người) và wifi hội nghị (thiết bị của chính mình) không tính; chỉ báo khi CHÍNH lần thử này cũng lạ cả IP lẫn thiết bị. Giới hạn đã biết: phòng máy đào tạo (IP và máy đều lạ với mọi người) trông giống hệt — cần danh sách mạng nội bộ đáng tin. Ngưỡng 5 tài khoản/giờ đặt trước khi đo; số đo: docs/behavior-expansion-2.md.
+
+| Tham số | Mặc định | Đơn vị | Khoảng | Ý nghĩa |
+|---|---|---|---|---|
+| `window_s` | `3600` | giây | 60–86400 | độ dài cửa sổ |
+| `min_accounts` | `5` | TK | 2–1000 | số tài khoản tối thiểu vào được từ IP bằng IP và thiết bị đều lạ |
 
 ### Tự động hoá
 

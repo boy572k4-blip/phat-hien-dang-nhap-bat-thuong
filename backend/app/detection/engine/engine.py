@@ -90,7 +90,7 @@ class RuleEngine:
 
     def observe(self, attempt: LoginAttempt) -> None:
         """Ghi lần thử vào chỉ mục, lịch sử và thống kê mà KHÔNG chạy luật nào. Replay chỉ chấm một phần các dòng vẫn phải cho mọi dòng đi qua đây để số đếm đầy đủ."""
-        indexes.record(self.store, attempt)
+        indexes.record(self.store, attempt, self.history.get(attempt.user_key))
         self.history.update(attempt)
         self.stats.update(attempt)
 
@@ -103,9 +103,9 @@ class RuleEngine:
     def evaluate(self, attempt: LoginAttempt, record: bool = True) -> Evaluation:
         """Chấm MỘT lần thử. `record=False`: chỉ truy vấn, không ghi chỉ mục/lịch sử/thống kê (thử "nếu như" mà không đổi trạng thái)."""
         started = time.perf_counter()
+        history = self.history.get(attempt.user_key)  # lịch sử TRƯỚC lần thử này (cập nhật sau khi chấm)
         if record:
-            indexes.record(self.store, attempt)
-        history = self.history.get(attempt.user_key)
+            indexes.record(self.store, attempt, history)
         available = self._available(attempt, history)
 
         result = Evaluation()
@@ -137,8 +137,8 @@ class Probe:
 
     def __init__(self, engine: RuleEngine, attempt: LoginAttempt) -> None:
         self.engine, self.attempt = engine, attempt
-        indexes.record(engine.store, attempt)
         self.history = engine.history.get(attempt.user_key)
+        indexes.record(engine.store, attempt, self.history)
         self._available = engine._available(attempt, self.history)
 
     def __enter__(self) -> "Probe":

@@ -114,6 +114,7 @@ class AccountHistory:
     # Hai tập nhỏ của MỘT tài khoản, chỉ dùng phép `in`: tuple nhẹ hơn frozenset ~4 lần khi có hàng triệu tài khoản (replay giai đoạn train RBA có 2,5 triệu).
     known_countries: tuple[str, ...] = ()  # quốc gia đã từng đăng nhập thành công
     known_devices: tuple[str, ...] = ()  # `ua_hash` đã từng đăng nhập thành công
+    known_ips: tuple[str, ...] = ()  # IP đã từng đăng nhập thành công (MR28 — `multi_account_success`)
 
 
 @dataclass(frozen=True)

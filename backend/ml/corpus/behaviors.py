@@ -13,8 +13,15 @@ Kèm số "mọi nguồn" (cả hệ thống như đang chạy) để thấy hà
 các trọng số khác giữ nguyên số đo MR25.
 
     cd backend
-    venv\\Scripts\\python.exe -m ml.corpus.run --split both --with-model-inputs --out-dir ml/artifacts/corpus/mr27
+    venv\\Scripts\\python.exe -m ml.corpus.run --split both --with-model-inputs --out-dir ml/artifacts/corpus/mr28
+    venv\\Scripts\\python.exe -m ml.corpus.run --split evaluation --with-model-inputs --gate full --out-dir ml/artifacts/corpus/mr28_full
     venv\\Scripts\\python.exe -m ml.corpus.behaviors [--write]
+
+"Vững" đo trên bản chạy cửa `setup` (tín hiệu riêng được thấy trọn hành vi); số của cả hệ thống báo thêm trên bản `full` (mọi khoá chặn ở
+cửa như chạy thật) nếu có.
+
+MR28: thêm 3 hành vi (đoán mã OTP, cố thử khi đang bị khoá, một IP vào nhiều tài khoản) và chạy trên bản MR28 của bộ dữ liệu (36 họ, có
+cửa `/login`); bản MR27 vẫn ở `ml/artifacts/corpus/mr27/`.
 """
 
 from __future__ import annotations
@@ -26,13 +33,14 @@ from collections import defaultdict
 
 from app.detection.engine.types import RuleHit
 from app.detection.hybrid import HybridProfile, RuleWeights, combine_risk
-from ml.corpus.calibrate_rules import CORPUS_DIR, PROFILE_PATH, calibrate, metrics, rule_hits
+from ml.corpus.calibrate_rules import CORPUS_DIR, PROFILE_PATH, calibrate, load_records, metrics, rule_hits
 
-MR27_DIR = CORPUS_DIR / "mr27"
-REPORT_PATH = MR27_DIR / "behaviors_report.json"
+RUN_DIR = CORPUS_DIR / "mr28"
+FULL_GATE_DIR = CORPUS_DIR / "mr28_full"
+REPORT_PATH = RUN_DIR / "behaviors_report.json"
 MIN_OWN_DETECTION = 0.5
 MAX_OWN_FP = 0.01
-NEW_RULES = ("success_burst",)
+NEW_RULES = ("success_burst", "otp_guessing", "blocked_retry", "multi_account_success")  # MR27, MR28
 
 # hành vi -> (họ tấn công của bộ MR24, tín hiệu riêng[, kho IP của lần thử độc hại]). Tín hiệu: mã luật, "ml" (hybrid_cp2) hoặc "ml_geo"
 # (mô hình địa lý-thời gian). Kho IP: chỉ tính biến thể mà lần thử độc hại đi qua kho đó (họ "ẩn danh" trộn Tor, VPN, datacenter).
@@ -52,6 +60,9 @@ BEHAVIORS: dict[str, tuple] = {
     "Đăng nhập qua VPN/datacenter (một mình cố ý không cảnh báo, MR25)": (("anonymizer_login",), ("vpn_ip", "datacenter_ip"), ("vpn", "datacenter")),
     "Di chuyển bất khả thi": (("impossible_travel",), ("impossible_travel",)),
     "Đăng nhập thành công dồn dập": (("login_burst",), ("success_burst",)),
+    "Đoán mã OTP liên tục": (("otp_guessing",), ("otp_guessing",)),
+    "Cố đăng nhập khi đang bị khoá": (("locked_hammering",), ("blocked_retry",)),
+    "Một IP đăng nhập thành công vào nhiều tài khoản": (("account_checker",), ("multi_account_success",)),
     "Tài khoản ngủ đông": (("dormant_account",), ("dormant_account_login", "ml_geo")),
     "Proxy cùng nước, nhà mạng lạ": (("same_country_proxy",), ("rare_network_login", "ml_geo")),
     "Mô phỏng tinh vi (mơ hồ có chủ đích)": (("targeted_mimic",), ("ml", "ml_geo")),
@@ -59,8 +70,7 @@ BEHAVIORS: dict[str, tuple] = {
 
 
 def load(split: str) -> list[dict]:
-    with (MR27_DIR / f"{split}.jsonl").open(encoding="utf-8") as f:
-        return [json.loads(line) for line in f]
+    return load_records(RUN_DIR / f"{split}.jsonl")
 
 
 def own_action(step: dict, signals: tuple[str, ...], profile: HybridProfile) -> str:
@@ -93,7 +103,11 @@ def behavior_table(records: list[dict], profile: HybridProfile) -> list[dict]:
         families, signals, pools = spec[0], spec[1], (spec[2] if len(spec) > 2 else None)
         variants = [r for r in records if r["family"] in families
                     and (pools is None or any(s["malicious"] and s.get("pool") in pools for s in r["steps"]))]
-        own = sum(any(s["malicious"] and own_action(s, signals, profile) != "allow" for s in r["steps"]) for r in variants)
+        own_hit = [any(s["malicious"] and own_action(s, signals, profile) != "allow" for s in r["steps"]) for r in variants]
+        own = sum(own_hit)
+        # biến thể mà hệ thống đã khoá kẻ tấn công (bằng tín hiệu khác) trước khi tín hiệu riêng kịp chấm — không tính là "phát hiện nhờ chính
+        # tín hiệu", nhưng cũng không phải lọt
+        preempted = sum(1 for r, hit in zip(variants, own_hit) if not hit and r.get("gated_malicious", 0) > 0)
         everything = sum(any(s["malicious"] and a != "allow" for s, a in zip(r["steps"], full[r["id"]])) for r in variants)
         fp = sum(own_action(s, signals, profile) != "allow" for s in benign_steps)
         fp_by_family, n_by_family = defaultdict(int), defaultdict(int)
@@ -108,6 +122,7 @@ def behavior_table(records: list[dict], profile: HybridProfile) -> list[dict]:
         rows.append({
             "behavior": name, "families": list(families), "signals": list(signals), "variants": len(variants),
             "own_detection": round(own_rate, 3), "all_sources_detection": round(everything / len(variants), 3),
+            "preempted_by_other_signals": preempted,
             "own_legit_alert_rate": round(fp_rate, 4), "own_legit_alerts": fp, "own_legit_by_family": dict(fp_by_family),
             "worst_legit_family": worst if fp_by_family[worst] else None,
             "worst_legit_family_rate": round(fp_by_family[worst] / n_by_family[worst], 4),
@@ -129,10 +144,16 @@ def main() -> None:
 
     rows = behavior_table(evaluation, profile)
     system = metrics(evaluation, full_actions(evaluation, profile))
+    full_gate = None
+    if (FULL_GATE_DIR / "evaluation.jsonl").is_file():  # như chạy thật: mọi khoá chặn ở cửa `/login`
+        realistic = load_records(FULL_GATE_DIR / "evaluation.jsonl")
+        full_gate = {"system": metrics(realistic, full_actions(realistic, profile)),
+                     "behaviors": {row["behavior"]: {k: row[k] for k in ("all_sources_detection", "own_detection", "preempted_by_other_signals")}
+                                   for row in behavior_table(realistic, profile)}}
     report = {
         "min_own_detection": MIN_OWN_DETECTION, "max_own_fp": MAX_OWN_FP,
         "new_rule_weights": {rule: e.to_dict() for rule, e in new_entries.items()},
-        "behaviors": rows, "system": system,
+        "behaviors": rows, "system": system, "full_gate": full_gate,
     }
     REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
 
@@ -145,6 +166,12 @@ def main() -> None:
               f"{'✓' if row['robust'] else '✗'}    {worst}")
     print(f"vững {sum(r['robust'] for r in rows)}/{len(rows)} hành vi đo được trên bộ dữ liệu; cả hệ thống: hợp lệ bị cảnh báo "
           f"{system['legit_alert_rate']:.1%}, OTP/khoá {system['legit_step_up_or_lock_rate']:.2%}")
+    if full_gate is not None:
+        fg = full_gate["system"]
+        print(f"như chạy thật (mọi khoá chặn ở cửa): hợp lệ bị cảnh báo {fg['legit_alert_rate']:.1%}, OTP/khoá {fg['legit_step_up_or_lock_rate']:.2%}; "
+              "phát hiện mọi nguồn / bị chặn sớm bởi tín hiệu khác:")
+        for name, b in full_gate["behaviors"].items():
+            print(f"  {name[:44]:44s} {b['all_sources_detection']:>5.0%}  chặn sớm {b['preempted_by_other_signals']}")
     if args.write and new_entries:
         current = HybridProfile.from_file(PROFILE_PATH)
         current = dataclasses.replace(current, weights=RuleWeights({**current.weights.entries, **new_entries}, current.weights.default_weight))

@@ -61,9 +61,23 @@ def rule_hits(step: dict) -> list[RuleHit]:
     ]
 
 
+def load_records(path: Path) -> list[dict]:
+    """Bản ghi của một lần chạy bộ dữ liệu, CHỈ giữ lần thử được chấm (MR28: bỏ bước gửi mã OTP và lần thử bị cửa `/login` từ chối vì đang
+    khoá — `ml.corpus.run.scored`); bản ghi MR24–MR27 không có hai loại đó nên không đổi."""
+    from ml.corpus.run import scored
+
+    with path.open(encoding="utf-8") as f:
+        records = [json.loads(line) for line in f]
+    for r in records:
+        # lần thử ĐỘC HẠI bị cửa `/login` từ chối vì khoá do HỆ THỐNG tạo trong biến thể (không tính khoá dựng sẵn của kịch bản): hệ thống đã
+        # chặn kẻ tấn công trước đó, bởi bất kỳ tín hiệu nào
+        r["gated_malicious"] = sum(1 for s in r["steps"] if s.get("gated") and s["malicious"] and s.get("gate") != "setup")
+        r["steps"] = [s for s in r["steps"] if scored(s)]
+    return records
+
+
 def load(split: str) -> list[dict]:
-    with (CORPUS_DIR / f"{split}.jsonl").open(encoding="utf-8") as f:
-        return [json.loads(line) for line in f]
+    return load_records(CORPUS_DIR / f"{split}.jsonl")
 
 
 def _counts(records: list[dict]) -> dict[str, list[int]]:

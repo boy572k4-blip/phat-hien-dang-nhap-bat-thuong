@@ -51,6 +51,16 @@ class Step:
     offset_s: float
     user_agent: str
     malicious: bool = False
+    kind: str = "login"  # "login": một lần đăng nhập (qua cửa `/login` rồi pipeline); "otp_fail" (MR28): một lần gửi sai mã OTP
+
+
+@dataclass(frozen=True)
+class Lock:
+    """MR28 — tài khoản/IP đã bị khoá TRƯỚC biến thể (vd hệ thống vừa tự khoá), còn hiệu lực đến `until_s`."""
+
+    kind: str  # "username" | "ip"
+    value: str
+    until_s: float
 
 
 @dataclass(frozen=True)
@@ -61,6 +71,7 @@ class Variant:
     accounts: tuple[str, ...]  # tài khoản có thật cần tạo trước (tên không có ở đây = tên không tồn tại)
     history: tuple[Step, ...]
     steps: tuple[Step, ...]
+    locks: tuple[Lock, ...] = ()
 
     @property
     def id(self) -> str:
@@ -327,6 +338,57 @@ def login_burst(rng, pools, seed):
     return (user,), history, steps
 
 
+def otp_guessing(rng, pools, seed):
+    """MR28 — kẻ đã có mật khẩu (lộ từ nơi khác) bị đòi OTP và đoán mã: mỗi lượt đăng nhập đúng mật khẩu rồi gửi 5 mã sai (hết lượt của mã),
+    1–4 lượt, rồi đăng nhập lại thêm một lần. Một lượt là dưới ngưỡng luật (5 < 10). Giả định mỗi lần đăng nhập của kẻ này đều bị đòi OTP: bộ
+    chạy ghi lần sai mã như `POST /login/verify-otp`, bất kể pipeline ra hành động gì."""
+    user, home, ua, habit, history = _victim(rng, pools, "otp_guessing", seed)
+    ip = _other_vn(rng, pools, home, same_city=False)
+    attacker_ua = rng.choice(BROWSER_UAS)
+    t, steps = rng.uniform(0, DAY - 2 * HOUR), []
+    for _ in range(rng.randint(1, 4)):
+        steps.append(Step(user, True, ip, t, attacker_ua, True))
+        for _ in range(5):
+            t += rng.uniform(5, 20)
+            steps.append(Step(user, False, ip, t, attacker_ua, True, kind="otp_fail"))
+        t += rng.uniform(60, 300)
+    steps.append(Step(user, True, ip, t, attacker_ua, True))
+    return (user,), history, steps
+
+
+def locked_hammering(rng, pools, seed):
+    """MR28 — tài khoản đang bị khoá 30 phút; kẻ tấn công cứ thử tiếp 5–40 lần trong lúc khoá (bị cửa `/login` từ chối ngay, không qua
+    pipeline), rồi thử thêm 1–4 lần sau khi khoá hết hạn."""
+    user, home, ua, habit, history = _victim(rng, pools, "locked_hammering", seed)
+    ip = _attacker_ip(rng, pools, home)
+    attacker_ua = rng.choice(BROWSER_UAS + SCRIPT_UAS)
+    start = rng.uniform(0, DAY - 2 * HOUR)
+    until = start + 30 * MINUTE
+    steps = [Step(user, False, ip, start + rng.uniform(0, 29 * MINUTE), attacker_ua, True) for _ in range(rng.randint(5, 40))]
+    t = until + rng.uniform(10, 300)
+    for _ in range(rng.randint(1, 4)):
+        steps.append(Step(user, False, ip, t, attacker_ua, True))
+        t += rng.uniform(5, 60)
+    return (user,), history, steps, (Lock("username", user, until),)
+
+
+def account_checker(rng, pools, seed):
+    """MR28 — sau nhồi thông tin: kẻ có danh sách mật khẩu đúng vào lần lượt 3–12 tài khoản từ MỘT IP bằng MỘT công cụ/trình duyệt (IP và
+    thiết bị đều lạ với từng tài khoản), xen 0–3 lần thử tên không tồn tại. Dưới 5 tài khoản là dưới ngưỡng luật."""
+    accounts = tuple(_account("account_checker", seed, i) for i in range(rng.randint(3, 12)))
+    history = []
+    for user in accounts:
+        history += _history(rng, user, _ip(rng, pools, VN_POOLS), rng.choice(BROWSER_UAS + MOBILE_UAS), n=rng.randint(3, 15), habit=_habit(rng))
+    ip = _attacker_ip(rng, pools)
+    attacker_ua = rng.choice(SCRIPT_UAS + BROWSER_UAS)
+    targets = list(accounts) + [f"ghost_ac_{seed}_{i}" for i in range(rng.randint(0, 3))]
+    t, steps = rng.uniform(0, DAY - 2 * HOUR), []
+    for user in rng.sample(targets, len(targets)):
+        steps.append(Step(user, user in accounts, ip, t, attacker_ua, True))
+        t += rng.uniform(20, 120)
+    return accounts, tuple(history), steps
+
+
 # ------------------------------------------------------------------------------------------------ họ hợp lệ "khó"
 
 
@@ -462,15 +524,75 @@ def office_nat_day(rng, pools, seed):
     return accounts, tuple(history), steps
 
 
+def otp_typo(rng, pools, seed):
+    """MR28 — đối chứng cho `otp_guessing`: chính chủ bị đòi OTP và gõ sai mã 1–5 lần; hết lượt (5 lần) thì đăng nhập lại và sai thêm 0–2 lần
+    trước khi đúng — tối đa 7 lần sai."""
+    user, home, ua, habit, history = _victim(rng, pools, "otp_typo", seed)
+    t = habit + rng.uniform(-HOUR, HOUR)
+    steps = [Step(user, True, home, t, ua)]
+    wrong = rng.choice((1, 1, 1, 2, 2, 3, 4, 5))
+    for _ in range(wrong):
+        t += rng.uniform(10, 60)
+        steps.append(Step(user, False, home, t, ua, kind="otp_fail"))
+    if wrong == 5:
+        t += rng.uniform(30, 120)
+        steps.append(Step(user, True, home, t, ua))
+        for _ in range(rng.randint(0, 2)):
+            t += rng.uniform(10, 60)
+            steps.append(Step(user, False, home, t, ua, kind="otp_fail"))
+    return (user,), history, steps
+
+
+def locked_owner(rng, pools, seed):
+    """MR28 — đối chứng cho `blocked_retry`: chính chủ bị khoá nhầm 30 phút, thử lại 1–8 lần trong lúc khoá (đúng mật khẩu, bị từ chối), rồi
+    đăng nhập sau khi khoá hết hạn. 8 lần chỉ ở ~10% biến thể."""
+    user, home, ua, habit, history = _victim(rng, pools, "locked_owner", seed)
+    start = habit + rng.uniform(-HOUR, HOUR)
+    until = start + 30 * MINUTE
+    steps = [Step(user, True, home, start + rng.uniform(30, 25 * MINUTE), ua) for _ in range(rng.choice((1, 1, 2, 2, 3, 3, 4, 5, 6, 8)))]
+    steps.append(Step(user, True, home, until + rng.uniform(60, 30 * MINUTE), ua))
+    return (user,), history, steps, (Lock("username", user, until),)
+
+
+def training_lab(rng, pools, seed):
+    """MR28 — đối chứng KHÓ cho `multi_account_success`: 5–15 nhân viên đăng nhập trong 1 giờ ở phòng máy đào tạo — IP lạ VÀ máy lạ với mọi
+    người. Luật không phân biệt được (giới hạn đã biết) — họ này đo đúng cái giá đó."""
+    lab = _ip(rng, pools, VN_POOLS)
+    lab_ua = rng.choice(BROWSER_UAS)
+    accounts = tuple(_account("training_lab", seed, i) for i in range(rng.randint(5, 15)))
+    history, steps = [], []
+    start = rng.uniform(1, 3) * HOUR
+    for user in accounts:
+        history += _history(rng, user, _ip(rng, pools, VN_POOLS, exclude=lab), rng.choice(BROWSER_UAS + MOBILE_UAS), n=rng.randint(5, 20), habit=_habit(rng))
+        steps.append(Step(user, True, lab, start + rng.uniform(0, HOUR), lab_ua))
+    return accounts, tuple(history), steps
+
+
+def event_wifi(rng, pools, seed):
+    """MR28 — đối chứng cho `multi_account_success`: 5–15 người dự hội nghị đăng nhập qua wifi khách sạn (IP lạ với mọi người) bằng máy của
+    CHÍNH mình trong 2 giờ."""
+    venue = _ip(rng, pools, VN_POOLS)
+    accounts = tuple(_account("event_wifi", seed, i) for i in range(rng.randint(5, 15)))
+    history, steps = [], []
+    start = rng.uniform(1, 3) * HOUR
+    for user in accounts:
+        ua = rng.choice(BROWSER_UAS + MOBILE_UAS)
+        history += _history(rng, user, _ip(rng, pools, VN_POOLS, exclude=venue), ua, n=rng.randint(5, 20), habit=_habit(rng))
+        steps.append(Step(user, True, venue, start + rng.uniform(0, 2 * HOUR), ua))
+    return accounts, tuple(history), steps
+
+
 FAMILIES: dict[str, tuple[str, Callable]] = {
     **{f.__name__: ("attack", f) for f in (
         brute_force, credential_stuffing, password_spray_slow, distributed_botnet, ua_rotation, account_enumeration,
         impossible_travel, dormant_account, targeted_mimic, same_country_proxy, success_after_failures, anonymizer_login,
-        bot_client, country_hop, regular_rhythm, distributed_botnet_local, login_burst,  # 2 họ cuối: MR27
+        bot_client, country_hop, regular_rhythm, distributed_botnet_local, login_burst,  # 2 họ: MR27
+        otp_guessing, locked_hammering, account_checker,  # MR28
     )},
     **{f.__name__: ("benign", f) for f in (
         routine, new_account, typo, heavy_typo, vpn_user, office_nat, business_travel, new_device, mobile_isp_switch, night_login,
         relogin, office_nat_day,  # MR27
+        otp_typo, locked_owner, training_lab, event_wifi,  # MR28
     )},
 }
 
@@ -478,12 +600,14 @@ FAMILIES: dict[str, tuple[str, Callable]] = {
 def build_variant(family: str, seed: int, pools: Pools) -> Variant:
     kind, builder = FAMILIES[family]
     rng = random.Random(f"{family}:{seed}")
-    accounts, history, steps = builder(rng, pools, seed)
+    built = builder(rng, pools, seed)
+    accounts, history, steps = built[:3]
+    locks = tuple(built[3]) if len(built) > 3 else ()  # MR28: khoá có sẵn trước biến thể
     steps = tuple(sorted(steps, key=lambda s: s.offset_s))
     assert all(math.isfinite(s.offset_s) for s in steps)
     if kind == "benign":
         assert not any(s.malicious for s in steps), family
-    return Variant(family, kind, seed, tuple(accounts), tuple(sorted(history, key=lambda s: s.offset_s)), steps)
+    return Variant(family, kind, seed, tuple(accounts), tuple(sorted(history, key=lambda s: s.offset_s)), steps, locks)
 
 
 def generate(split: str, pools: Pools, *, per_family: int = VARIANTS_PER_FAMILY, families: tuple[str, ...] | None = None) -> list[Variant]:

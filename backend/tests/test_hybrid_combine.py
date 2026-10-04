@@ -187,6 +187,7 @@ def test_the_real_registry_ships_the_min_actions_settled_by_mr25():
         "brute_force": "alert", "credential_stuffing": "alert", "impossible_travel": "alert",
         "success_after_failures": "step_up", "blocklist_hit": "lock",
         "password_spray_slow": "alert",  # MR27: chỉ phạm vi IP, kèm điều kiện tỉ lệ thành công
+        "otp_guessing": "lock", "blocked_retry": "step_up",  # MR28
     }
 
 

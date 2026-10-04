@@ -581,9 +581,18 @@ lệ khó không vượt mục tiêu báo nhầm. Mỗi hành vi cập nhật v�
   - [x] Cổng "cùng phiên" của `ml_geo` (≤ 30 phút, cùng IP + thiết bị): "đăng nhập lại" bị cảnh báo 64 → 38/121 (cùng máy 0/57)
   - **Kết quả**: 14/18 hành vi đo được trên bộ dữ liệu vững; ma trận 26 hành vi: **vững 21** (CP5: 18). Cả hệ thống trên 25 họ cũ
     không đổi (19,3% / 1,67% / 94,7%); 20 kịch bản không xấu đi
-- [ ] **MR28 [Nên, M] Đợt 2 — 3 hành vi mới**: đoán mã OTP liên tục (`verify-otp` hiện chỉ đếm số lần trong một challenge, không
+- [x] **MR28 [Nên, M] Đợt 2 — 3 hành vi mới**: đoán mã OTP liên tục (`verify-otp` hiện chỉ đếm số lần trong một challenge, không
   ghi sự kiện); cố đăng nhập vào tài khoản đang bị khoá (đếm từ audit `reject_blocked_login`); một IP đăng nhập THÀNH CÔNG vào
-  nhiều tài khoản
+  nhiều tài khoản — chi tiết và số đo: [`behavior-expansion-2.md`](behavior-expansion-2.md)
+  - [x] `app/detection/gate.py`: lần thử bị từ chối vì khoá và lần sai mã OTP được ghi (audit + bộ đếm của rule engine), luật chấm ở lần
+    đăng nhập kế tiếp — vẫn một bộ luật
+  - [x] `otp_guessing` (≥ 10 lần sai mã/24 giờ → lock): 83% / 0% báo nhầm; `blocked_retry` (≥ 10 lần bị từ chối/1 giờ → step_up khi hết
+    khoá): 83% / 0%; `multi_account_success` (≥ 5 tài khoản/giờ, IP và thiết bị đều lạ): trọng số 0,056 — phòng máy đào tạo giống hệt,
+    chỉ là bằng chứng, hành vi KHÔNG vững
+  - [x] Bộ chạy tái hiện cửa `/login` (bước OTP, khoá dựng sẵn), hai chế độ cửa: `setup` đo "vững", `full` đo cả hệ thống như chạy thật
+    (phát hiện: nhiều hành vi bị khoá sớm bởi tín hiệu khác trước khi luật riêng đủ dữ kiện)
+  - **Kết quả**: 16/21 hành vi đo được trên bộ dữ liệu vững; ma trận 29 hành vi: **vững 23**. Các họ cũ không đổi; 20 kịch bản không
+    đổi
 - [ ] **MR29 [Nên, M] Đợt 3 — luật kết hợp**: Tor/VPN/datacenter + quốc gia mới, thiết bị mới hoặc đăng nhập sai; bot UA + đăng
   nhập sai
 - [ ] **MR30 [Thêm, S] Ngôn ngữ trình duyệt lệch quốc gia của IP** (Accept-Language) — chỉ làm nếu MR27–MR29 xong trước hạn

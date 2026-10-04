@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from app.detection.engine import CidrSet, LoginAttempt, MemoryGlobalStats, RuleConfig, RuleEngine, ThreatIntel
+from app.detection.engine import indexes as K
 
 T0 = 1_700_000_000.0
 HANOI, NEW_YORK = (21.03, 105.85), (40.71, -74.01)
@@ -152,6 +153,66 @@ def test_wide_asn_scope_findings_are_evidence_that_never_forces_a_minimum_action
     assert hit(spray_asn[39], "password_spray_slow").forces is False
     stuffing_ip = run(RuleEngine(), [make(i, username=f"u{i % 5}", ip="9.9.9.9") for i in range(10)])
     assert hit(stuffing_ip[9], "credential_stuffing").forces is True
+
+
+# ------------------------------------------------------------------------------------------------ MR28: OTP, khoá, nhiều tài khoản
+
+
+def test_otp_guessing_fires_once_two_codes_worth_of_wrong_otps_are_recorded():
+    engine = RuleEngine()
+    for i in range(9):
+        K.record_otp_failure(engine.store, "u-alice", T0 + i * 10)
+    assert "otp_guessing" not in engine.evaluate(make(200, success=True)).by_rule()  # 9 lần sai: chưa đủ
+    K.record_otp_failure(engine.store, "u-alice", T0 + 210)
+    found = hit(engine.evaluate(make(300, success=True)), "otp_guessing")
+    assert found.evidence["otp_failures"] == 10 and found.techniques == ("T1110",)
+    assert "otp_guessing" not in engine.evaluate(make(310, username="bob", success=True)).by_rule()  # tài khoản khác
+    assert "otp_guessing" not in engine.evaluate(make(320, username="ghost", exists=False)).by_rule()
+
+
+def test_blocked_retry_counts_rejected_attempts_by_username_regardless_of_case_and_by_ip():
+    engine = RuleEngine()
+    for i in range(10):
+        K.record_blocked(engine.store, "Alice" if i % 2 else "alice", f"9.9.9.{i}", T0 + i * 60)
+    found = hit(engine.evaluate(make(1900)), "blocked_retry")  # 31 phút sau: khoá đã hết hạn, vẫn trong cửa sổ 1 giờ
+    assert found.evidence["scope"] == "username" and found.evidence["blocked_attempts"] == 10
+    by_ip = RuleEngine()
+    for i in range(10):
+        K.record_blocked(by_ip.store, f"user{i}", "7.7.7.7", T0 + i)
+    assert hit(by_ip.evaluate(make(100, username="newbie", ip="7.7.7.7")), "blocked_retry").evidence["scope"] == "ip"
+    few = RuleEngine()
+    for i in range(9):
+        K.record_blocked(few.store, "alice", "1.1.1.1", T0 + i)
+    assert "blocked_retry" not in few.evaluate(make(100)).by_rule()
+    assert "blocked_retry" not in engine.evaluate(make(1900 + 3600)).by_rule()  # quá cửa sổ 1 giờ
+
+
+def _accounts_with_home(engine, n, *, ip=lambda k: f"10.9.0.{k}", ua=lambda k: "Home browser"):
+    for k in range(n):
+        engine.evaluate(make(k, username=f"user{k}", success=True, ip=ip(k), user_agent=ua(k)))
+
+
+def test_multi_account_success_needs_five_accounts_entered_from_an_ip_and_a_device_new_to_each():
+    engine = RuleEngine()
+    _accounts_with_home(engine, 6)
+    results = run(engine, [make(1000 + k * 30, username=f"user{k}", success=True, ip="5.6.7.8", user_agent="AttackerTool/1.0") for k in range(6)])
+    assert fired(results, "multi_account_success") == [4, 5]
+    found = hit(results[4], "multi_account_success")
+    assert found.evidence["accounts"] == 5 and set(found.techniques) == {"T1078", "T1110.004"}
+
+
+def test_multi_account_success_ignores_an_office_ip_people_already_use_and_people_on_their_own_device():
+    office = RuleEngine()
+    _accounts_with_home(office, 6, ip=lambda k: "5.6.7.8", ua=lambda k: f"UA{k}")  # NAT văn phòng: IP quen với từng người
+    later = run(office, [make(1000 + k, username=f"user{k}", success=True, ip="5.6.7.8", user_agent="Lab PC") for k in range(6)])
+    assert fired(later, "multi_account_success") == []
+    wifi = RuleEngine()
+    _accounts_with_home(wifi, 6, ua=lambda k: f"UA{k}")  # wifi hội nghị: IP lạ nhưng máy của chính mình
+    later = run(wifi, [make(1000 + k, username=f"user{k}", success=True, ip="5.6.7.8", user_agent=f"UA{k}") for k in range(6)])
+    assert fired(later, "multi_account_success") == []
+    fresh = RuleEngine()  # tài khoản chưa từng thành công: lần đầu của ai cũng "lạ" — không tính
+    first = run(fresh, [make(k, username=f"new{k}", success=True, ip="5.6.7.8", user_agent="AttackerTool/1.0") for k in range(6)])
+    assert fired(first, "multi_account_success") == []
 
 
 # ------------------------------------------------------------------------------------------------ success_burst (MR27)
