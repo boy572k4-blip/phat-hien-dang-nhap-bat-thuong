@@ -117,7 +117,19 @@ def _fresh_env():
             db.close()
 
     fastapi_app.dependency_overrides[get_db] = _override_get_db
-    client = TestClient(fastapi_app)
+
+    # Kịch bản gửi IP nạn nhân/kẻ tấn công qua X-Forwarded-For — bật tin header ngay trong script, không phụ thuộc .env. MR32: header chỉ
+    # được tin khi kết nối đến từ proxy tin cậy (mặc định 127.0.0.1), mà TestClient kết nối từ "testclient" -> đặt lại địa chỉ kết nối.
+    from app.config import get_settings
+
+    get_settings().trust_forwarded_for = True
+
+    async def from_loopback(scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            scope = {**scope, "client": ("127.0.0.1", 50000)}
+        await fastapi_app(scope, receive, send)
+
+    client = TestClient(from_loopback)
     return client, session_factory
 
 
@@ -225,7 +237,7 @@ def _force_step_up_action(monkeypatch_target) -> None:
         score=60, action="step_up", probability=0.6, ml_probability=None, rule_probability=0.6, reputation_probability=0.0,
         overridden_by=None, contributions=(Contribution(source="sim", label="ép hành động cho script minh hoạ", weight=0.6, group="rule"),),
     )
-    engine.evaluate = lambda features, hits, bands=None: result  # noqa: ARG005 — chữ ký phải khớp evaluate() thật
+    engine.evaluate = lambda features, hits, **kwargs: result  # noqa: ARG005 — kwargs: bands, ml (MR20), ml_geo/ml_geo_label (MR22)
 
 
 def run_step_up_scenario(client: TestClient, session_factory) -> StepUpScenarioResult:

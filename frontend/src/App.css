@@ -50,6 +50,22 @@
   background: var(--accent-bg);
 }
 
+.app-nav__logout {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+
+.app-nav__logout:hover {
+  color: var(--text-h);
+  background: var(--accent-bg);
+}
+
 .app-main {
   flex: 1;
   display: flex;

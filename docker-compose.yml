@@ -7,8 +7,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-lad_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lad_password}
       POSTGRES_DB: ${POSTGRES_DB:-lad_db}
+    # MR32: chỉ mở cổng trên chính máy này (127.0.0.1) — mặc định Docker mở trên MỌI giao diện mạng, máy khác cùng Wi-Fi/LAN kết
+    # nối được thẳng vào DB bằng mật khẩu mẫu.
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,8 +23,9 @@ services:
     image: redis:7-alpine
     container_name: lad_redis
     restart: unless-stopped
+    # MR32: Redis không đặt mật khẩu — tuyệt đối không mở ra mạng (máy khác xoá được bộ đếm của rule engine, khoá/mở khoá tuỳ ý).
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

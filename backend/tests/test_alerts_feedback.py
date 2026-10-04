@@ -75,7 +75,7 @@ def test_feedback_can_be_resubmitted_and_each_submission_adds_a_new_audit_log_ro
 
     db_session.refresh(alert)
     assert alert.status == "resolved" and alert.feedback == "xem lai, thuc ra dung"  # lần sau ghi đè lần trước
-    assert db_session.query(AuditLog).filter(AuditLog.target_id == alert.id).count() == 2  # nhưng nhật ký giữ cả hai
+    assert db_session.query(AuditLog).filter(AuditLog.target_type == "alert", AuditLog.target_id == alert.id).count() == 2  # nhưng nhật ký giữ cả hai
 
 
 def test_feedback_on_an_unknown_alert_returns_404(db_session, client):

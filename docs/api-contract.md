@@ -49,7 +49,8 @@ Web app mẫu (React)                Attack-sim scripts
 |---|---|---|
 | `GET /health` | 1 | Kiểm tra service + kết nối DB |
 | `POST /login` | 2 | Đăng nhập web app mẫu, ghi `login_events` |
-| `POST /admin/login` | 5 | Đăng nhập admin (bảng `admins` riêng), trả JWT (`jwt_expire_minutes` = 60) |
+| `POST /admin/login` | 5→32 | Đăng nhập admin (bảng `admins` riêng), trả JWT (`jwt_expire_minutes` = 60). MR32: ≥ 10 lần sai/15 phút từ một IP hoặc ≥ 5 lần sai/15 phút vào một tên (IP quen và IP lạ đếm riêng) → **429** kèm `Retry-After` (giây); mọi lần thử ghi `audit_log` |
+| `GET /admin/login-attempts` | 32 | Các lần đăng nhập quản trị gần nhất (`?limit=`, mặc định 50, tối đa 200): thời điểm, kết quả `success`\|`failed`\|`rejected`, tên, IP, User-Agent, IP quen hay lạ, phạm vi bị từ chối. **Có JWT bắt buộc** |
 | `GET /login-events` | 4→5→8→23 | Danh sách log, phân trang + lọc (`username`, `success`, `is_synthetic` — nâng cấp sau Tuần 7; `action` = allow\|alert\|step_up\|lock thay `risk_level` từ MR23). Mỗi lần thử MỘT điểm (`hybrid_risk_score`) và MỘT hành động (`hybrid_action`); phản hồi kèm `action_bands` (ngưỡng đang dùng). **Có JWT bắt buộc từ Tuần 5** |
 | `GET /alerts` | 4→5→13→17→23 | Danh sách cảnh báo, phân trang, mặc định sắp theo ưu tiên (`?sort=priority`\|`recent`, MR13); lọc `?attack_family=`\|`rule_id=`\|`campaign_id=`\|`status=` (MR17). MR23: một cảnh báo = một sự cố, không còn `alert_type`; `explanation` liệt kê mọi bằng chứng. **Có JWT bắt buộc từ Tuần 5** |
 | `GET /campaigns` | 14 | Danh sách chiến dịch (nhiều tài khoản chung hạ tầng), phân trang, lọc `?status=`. **Có JWT bắt buộc từ Tuần 5** |
@@ -63,22 +64,18 @@ Web app mẫu (React)                Attack-sim scripts
 | `DELETE /rules/{id}` | 17 | Khôi phục mặc định của sổ đăng ký (xoá hẳn ghi đè). **Có JWT bắt buộc từ Tuần 5** |
 | `GET /model-health` | 17 | Phiên bản mô hình đã đăng ký + trôi (PSI) của chính hệ thống: 300 lần thử đầu so với 300 gần nhất, theo đặc trưng và theo điểm `hybrid_cp2` (MR26); khoảng cách train RBA → hệ thống (`rba_gap_*`) và độ lệch miền đang dùng / ước lượng từ log thật (`domain_shift`); `?refresh=` bỏ qua cache 10 phút. **Có JWT bắt buộc từ Tuần 5** |
 | `GET /users/{id}/profile` | 17 | Hồ sơ user: timeline (50 gần nhất), alert (20 gần nhất), thiết bị/quốc gia quen, ngưỡng rủi ro riêng (MR15). **Có JWT bắt buộc từ Tuần 5** |
-| `WS /ws/alerts` | 5 | Đẩy cảnh báo real-time, xác thực bằng JWT qua query param `?token=` |
+| `WS /ws/alerts` | 5→32 | Đẩy cảnh báo real-time, xác thực bằng JWT khi handshake qua header `Sec-WebSocket-Protocol: bearer, <jwt>` (trình duyệt: `new WebSocket(url, ["bearer", token])`; máy chủ chọn lại subprotocol `bearer`). Từ MR32 không nhận `?token=` |
 
-⚠️ **Rủi ro đã biết (chấp nhận có chủ đích):** JWT qua query param của WebSocket
-có thể lộ ra trong console log lỗi trình duyệt, access log phía server, và
-đôi khi lịch sử trình duyệt — khác với header (không bị log theo cách này).
-Checklist gốc mục 5.1 cho phép "qua query param hoặc header khi handshake";
-chọn query param vì `WebSocket` API của trình duyệt không hỗ trợ set custom
-header khi handshake. Giảm thiểu bằng JWT hết hạn sau 60 phút.
+✅ **Đã sửa ở MR32** (trước đó là rủi ro chấp nhận): JWT qua query param của WebSocket bị uvicorn ghi nguyên văn vào access log. API
+`WebSocket` của trình duyệt không đặt được header tuỳ ý nhưng đặt được danh sách subprotocol — token đi ở đó, không nằm trong URL.
+Chi tiết: [`security-review.md`](security-review.md).
 
 ⚠️ **Rủi ro đã biết khác (Tuần 6, `TRUST_FORWARDED_FOR`):** `POST /login`
 đọc IP nguồn từ header `X-Forwarded-For` thay vì IP TCP thật khi biến môi
 trường `TRUST_FORWARDED_FOR=true` — chỉ để script `attack-sim/impossible_travel.py`
-giả lập vị trí đăng nhập khi demo cục bộ. Mặc định **TẮT**. Bật cờ này khi
-backend expose thật ra ngoài (không qua reverse proxy đáng tin cậy) cho
-phép BẤT KỲ ai tự khai IP nguồn tuỳ ý, né được toàn bộ rule theo IP (brute
-force theo IP, credential stuffing, GeoIP) — xem `backend/app/config.py`.
+giả lập vị trí đăng nhập khi demo cục bộ. Mặc định **TẮT**. MR32 thu hẹp rủi ro: kể cả khi bật, header chỉ được tin khi kết nối TCP
+đến từ `TRUSTED_PROXIES` (mặc định `127.0.0.1,::1`), đọc từ phải sang trái (phần tử do proxy nối vào, không phải phần client tự khai),
+phần tử không phải IP hợp lệ thì bỏ — máy khác trong mạng không tự khai IP nguồn được nữa — xem `backend/app/utils/network.py`.
 
 ### `POST /login` (nhiệm vụ 2.1, mở rộng MR16)
 

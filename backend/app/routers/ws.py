@@ -1,9 +1,13 @@
 """WebSocket /ws/alerts — đẩy cảnh báo real-time cho dashboard admin
 (nhiệm vụ 5.1 xác thực + 5.3 real-time).
 
-Xác thực bằng JWT admin qua query param `?token=...` KHI HANDSHAKE — không
-có token hoặc token không hợp lệ thì đóng kết nối ngay lập tức, không nhận
-được dữ liệu (đúng yêu cầu checklist mục 5.1).
+Xác thực bằng JWT admin KHI HANDSHAKE — không có token hoặc token không
+hợp lệ thì đóng kết nối ngay lập tức, không nhận được dữ liệu (đúng yêu cầu
+checklist mục 5.1).
+
+MR32: token đi trong header `Sec-WebSocket-Protocol: bearer, <jwt>` (trình duyệt: `new WebSocket(url, ["bearer", token])`) thay vì
+query `?token=` — uvicorn ghi cả đường dẫn kèm query string vào access log, nên token quản trị (dùng được 60 phút cho MỌI route quản
+trị) từng nằm nguyên văn trong log máy chủ. Máy chủ chọn lại subprotocol "bearer" khi chấp nhận (trình duyệt đòi phải có).
 """
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
@@ -13,14 +17,24 @@ from app.ws_manager import ws_manager
 
 router = APIRouter()
 
+SUBPROTOCOL = "bearer"
+
+
+def _bearer_token(websocket: WebSocket) -> str | None:
+    offered = websocket.scope.get("subprotocols") or []
+    if len(offered) == 2 and offered[0] == SUBPROTOCOL:
+        return offered[1]
+    return None
+
 
 @router.websocket("/ws/alerts")
-async def ws_alerts(websocket: WebSocket, token: str | None = None):
+async def ws_alerts(websocket: WebSocket):
+    token = _bearer_token(websocket)
     if token is None or decode_admin_access_token(token) is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    await ws_manager.connect(websocket)
+    await ws_manager.connect(websocket, subprotocol=SUBPROTOCOL)
     try:
         while True:
             # Client không cần gửi gì lên — chỉ dùng receive() để phát hiện

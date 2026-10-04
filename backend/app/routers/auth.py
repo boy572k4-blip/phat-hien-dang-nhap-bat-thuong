@@ -19,26 +19,34 @@ MR16 "Phản ứng tự động (mô phỏng)" đổi đường đi cho HAI trư
 
 MR28: hai loại lần thử không qua pipeline — bị từ chối vì đang khoá ở (1), và nhập sai mã OTP — được ghi vào bộ đếm của rule engine qua
 `app/detection/gate.py` (luật `blocked_retry`, `otp_guessing` chấm ở lần đăng nhập kế tiếp).
+
+MR32: tên đăng nhập không tồn tại vẫn tốn một lần bcrypt (`check_password`) — trước đó thời gian phản hồi (~vài ms so với ~230 ms) để
+lộ tài khoản nào có thật. Mã OTP demo chỉ trả trong response khi KHÔNG chạy production (`APP_ENV=production`: mã chỉ ghi ra log máy chủ
+như một kênh gửi mô phỏng — người cầm mật khẩu không tự nhận được mã).
 """
 
 from datetime import datetime, timezone
+
+import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.detection import gate
 from app.detection.pipeline import run_detection_pipeline
 from app.detection.response_execution import OTP_MAX_ATTEMPTS, OTP_TTL, generate_otp_code, hash_otp_code, otp_code_matches
 from app.models import AuditLog, OtpChallenge, ResponseAction, User
 from app.schemas import LoginRequest, LoginResponse, OtpVerifyRequest
-from app.security import verify_password
+from app.security import check_password
 from app.utils.network import resolve_client_ip
 from app.utils.time import ensure_utc
 
 router = APIRouter()
+logger = logging.getLogger("auth")
 
 _LOCKED_MESSAGE = "Tài khoản hoặc nguồn đăng nhập đang tạm khoá do hoạt động bất thường. Thử lại sau."
 _OTP_INVALID_MESSAGE = "Mã xác thực không đúng hoặc đã hết hạn."
@@ -70,7 +78,7 @@ async def login(payload: LoginRequest, request: Request, background_tasks: Backg
     # So khớp hash chứ không so plain text. MR20: bcrypt (~230 ms CPU, cố ý chậm) chạy ở threadpool — gọi thẳng trong hàm
     # `async` này sẽ CHẶN vòng lặp sự kiện dùng chung, mọi request đăng nhập đồng thời phải xếp hàng chờ nhau (đo: 10
     # request đồng thời mất ~3 giây). Thư viện bcrypt nhả GIL khi băm nên các lần kiểm tra chạy song song được trên nhiều lõi.
-    success = (await run_in_threadpool(verify_password, payload.password, user.password_hash)) if user else False
+    success = await run_in_threadpool(check_password, payload.password, user.password_hash if user else None)
 
     if not success:
         background_tasks.add_task(
@@ -103,6 +111,9 @@ async def login(payload: LoginRequest, request: Request, background_tasks: Backg
         db.add(AuditLog(actor="system", action="execute_step_up", target_type="login_event", target_id=result.login_event_id, detail={"otp_challenge_id": challenge.id}))
         db.commit()
 
+        if get_settings().is_production:
+            logger.info("OTP cho user_id=%s (challenge %s) đã gửi qua kênh mô phỏng: %s", user.id, challenge.id, code)
+            return LoginResponse(success=False, message="Cần xác thực thêm — mã đã gửi tới kênh đã đăng ký.", step_up_required=True, challenge_id=challenge.id)
         return LoginResponse(
             success=False,
             message=f"Cần xác thực thêm — mã demo: {code} (hệ thống thật sẽ gửi qua SMS/email, KHÔNG BAO GIỜ hiện trực tiếp như thế này).",

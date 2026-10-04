@@ -13,12 +13,14 @@ logger = logging.getLogger("main")
 
 app = FastAPI(title="Anomaly Login Detection API", version="0.1.0")
 
+# MR32: chỉ đúng nguồn frontend, đúng các phương thức/header API dùng. Không dùng cookie (JWT đi trong header Authorization) nên không
+# bật allow_credentials — trình duyệt không gửi kèm cookie/thông tin đăng nhập nào sang API từ trang khác.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_origin],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(auth.router)

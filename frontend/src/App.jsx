@@ -1,4 +1,4 @@
-import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import "./App.css";
 import AdminLoginPage from "./pages/AdminLoginPage";
@@ -9,7 +9,7 @@ import LoginPage from "./pages/LoginPage";
 import ModelHealthPage from "./pages/ModelHealthPage";
 import RulesPage from "./pages/RulesPage";
 import UserProfilePage from "./pages/UserProfilePage";
-import { getAdminToken } from "./services/auth";
+import { clearAdminToken, getAdminToken } from "./services/auth";
 
 // Route quản trị (nhiệm vụ 5.1) — chưa có token thì đá về /admin/login.
 // Không xác thực chữ ký JWT phía client (không cần thiết — backend luôn
@@ -41,6 +41,23 @@ function SiteHeader() {
   );
 }
 
+function LogoutButton() {
+  const navigate = useNavigate();
+  if (!getAdminToken()) return null;
+  return (
+    <button
+      type="button"
+      className="app-nav__logout"
+      onClick={() => {
+        clearAdminToken();
+        navigate("/admin/login", { replace: true });
+      }}
+    >
+      Đăng xuất
+    </button>
+  );
+}
+
 function AdminNav() {
   return (
     <nav className="app-nav">
@@ -60,6 +77,7 @@ function AdminNav() {
       <NavLink to="/dashboard/model-health" className={navLinkClass}>
         Mô hình
       </NavLink>
+      <LogoutButton />
     </nav>
   );
 }

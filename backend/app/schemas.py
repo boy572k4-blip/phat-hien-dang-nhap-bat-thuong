@@ -6,9 +6,13 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
+# MR32: mật khẩu tối đa 128 ký tự — bcrypt chỉ dùng 72 byte đầu, giới hạn để không nhận thân request khổng lồ vào bước băm.
+PASSWORD_MAX_LENGTH = 128
+
+
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1)
+    password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
 
 
 class LoginResponse(BaseModel):
@@ -33,12 +37,25 @@ class OtpVerifyRequest(BaseModel):
 
 class AdminLoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1)
+    password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
 
 
 class AdminLoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class AdminLoginAttemptOut(BaseModel):
+    """GET /admin/login-attempts (MR32) — một lần thử đăng nhập quản trị, đọc từ `audit_log`."""
+
+    id: int
+    created_at: datetime
+    outcome: str  # "success" | "failed" | "rejected"
+    username: str
+    ip: str
+    user_agent: str | None = None
+    familiar_ip: bool  # IP đã từng đăng nhập quản trị thành công bằng tên này (khoá thông minh đếm riêng)
+    refused_scope: str | None = None  # "ip" | "account" khi bị từ chối
 
 
 class LoginEventOut(BaseModel):

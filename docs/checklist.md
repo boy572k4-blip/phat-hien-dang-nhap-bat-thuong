@@ -620,11 +620,21 @@ lệ khó không vượt mục tiêu báo nhầm. Mỗi hành vi cập nhật v�
     ghi rõ ở báo cáo; thực tế: xem 200 người/ngày (trong ~8.260) chỉ bắt 12,6% user-ngày bị tấn công (`new_dst_1h`: 24,1%)
   - Xong khi: báo cáo riêng ghi rõ đây là kiểm chứng PHƯƠNG PHÁP trên log thật (log đăng nhập Windows nội bộ, khác cấu trúc web,
     không nối vào `/login`) — đạt; dữ liệu không vào git
-- [ ] **MR32 [Lõi, S] Hệ thống tự bảo vệ mình**
-  - [ ] `/admin/login` hiện không giới hạn số lần thử, không ghi log, không qua phát hiện (`routers/admin.py`) → giới hạn số lần,
-    khoá tạm, ghi audit
-  - [ ] Rà bảo mật toàn bộ (`/security-review`), JWT, CORS, secrets, `TRUST_FORWARDED_FOR`
-  - [ ] Ghi chú lưu giữ/xoá dữ liệu cá nhân (IP, UA, vị trí) để trả lời câu hỏi về dữ liệu cá nhân
+- [x] **MR32 [Lõi, S] Hệ thống tự bảo vệ mình** — chi tiết: [`security-review.md`](security-review.md)
+  - [x] `/admin/login` ([`admin_guard.py`](../backend/app/admin_guard.py)): ≥ 10 lần sai/15 phút theo IP, ≥ 5 lần sai/15 phút theo
+    tài khoản với **khoá thông minh** (IP quen và IP lạ đếm riêng — kẻ tấn công không khoá được quản trị viên ở máy quen) → 429 +
+    `Retry-After`; kiểm tra trước bcrypt; ghi lần thử TRƯỚC khi đếm nên request song song không vượt được giới hạn; mọi lần thử vào
+    `audit_log`, xem ở `GET /admin/login-attempts` + bảng "Đăng nhập quản trị gần đây" trên dashboard
+  - [x] Rà bảo mật thủ công toàn bộ (11 phát hiện, 2 mức cao): khoá JWT mẫu công khai (máy dev đang dùng) → production từ chối khởi
+    động, dev dùng khoá ngẫu nhiên tạm; tên không tồn tại vẫn chạy bcrypt (thời gian 212,9 so với 209,2 ms — hết lộ tài khoản, phát
+    hiện ở MR20); token WebSocket chuyển từ URL (bị ghi vào access log) sang subprotocol; `X-Forwarded-For` chỉ tin từ
+    `TRUSTED_PROXIES`, đọc từ phải; Postgres/Redis chỉ mở trên 127.0.0.1; CORS thu hẹp; mật khẩu ≤ 128 ký tự; JWT bắt buộc
+    `exp`/`iat`/`sub`; OTP demo không trả về khi `APP_ENV=production`; 401 → tự đăng xuất, có nút "Đăng xuất". Quét lịch sử git:
+    không lộ khoá bí mật. Chưa chạy quét lỗ hổng thư viện (cần gửi ra dịch vụ ngoài)
+  - [x] Ghi chú dữ liệu cá nhân (lưu gì, mục đích, ai xem, không lưu gì, Luật 91/2025/QH15 + Nghị định 356/2025/NĐ-CP, đề xuất thời
+    hạn lưu giữ và quy trình xoá — chưa có tác vụ xoá tự động)
+  - Kiểm trên trình duyệt với bản sao DB tạm: WebSocket "Real-time", khoá sau 5 lần sai hiện đúng thông báo, khởi động lại backend → tự
+    về trang đăng nhập (bắt được và sửa một lỗi của chính bộ chặn 401); script mô phỏng MR16 cho kết quả như cũ (sửa thêm lỗi có từ MR20)
 - [ ] **MR33 [Nên, S] Dọn repo và mã**: xoá `backend/scripts/_soak_test_raw.json` và thêm vào `.gitignore`; FastAPI `lifespan`
   thay `on_event`; `create_admin.py` không crash khi thiếu `PYTHONIOENCODING`; ruff/format; xoá code chết sau hợp nhất
 

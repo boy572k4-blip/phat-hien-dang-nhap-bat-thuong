@@ -73,6 +73,20 @@ def test_websocket_accepts_connection_with_valid_token(client, db_session):
     login = client.post("/admin/login", json={"username": "admin", "password": ADMIN_PASSWORD})
     token = login.json()["access_token"]
 
-    with client.websocket_connect(f"/ws/alerts?token={token}") as ws:
-        # Kết nối thành công — không raise là đủ để xác nhận.
-        assert ws is not None
+    with client.websocket_connect("/ws/alerts", subprotocols=["bearer", token]) as ws:
+        # Kết nối thành công — không raise là đủ để xác nhận; máy chủ chọn lại subprotocol "bearer" (trình duyệt đòi phải có).
+        assert ws.accepted_subprotocol == "bearer"
+
+
+def test_websocket_no_longer_accepts_the_token_in_the_url(client, db_session):
+    """MR32: token trong query string bị uvicorn ghi nguyên văn vào access log — không còn được chấp nhận."""
+    from starlette.websockets import WebSocketDisconnect
+
+    _create_admin(db_session)
+    token = client.post("/admin/login", json={"username": "admin", "password": ADMIN_PASSWORD}).json()["access_token"]
+
+    try:
+        with client.websocket_connect(f"/ws/alerts?token={token}"):
+            raise AssertionError("Token trong URL đáng lẽ phải bị từ chối")
+    except WebSocketDisconnect:
+        pass

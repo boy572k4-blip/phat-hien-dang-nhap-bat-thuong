@@ -3,6 +3,7 @@ import "./DashboardPage.css";
 
 import { useCallback, useEffect, useState } from "react";
 
+import AdminLoginPanel from "../components/AdminLoginPanel";
 import AlertListPanel from "../components/AlertListPanel";
 import BlocklistPanel from "../components/BlocklistPanel";
 import LogTablePanel from "../components/LogTablePanel";
@@ -60,6 +61,7 @@ export default function DashboardPage() {
       </div>
 
       <BlocklistPanel />
+      <AdminLoginPanel />
     </main>
   );
 }

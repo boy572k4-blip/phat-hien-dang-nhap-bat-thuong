@@ -216,8 +216,9 @@ Log server bản sau MR20 không có lỗi nào trong toàn bộ lượt đo.
   sẽ biến nó thành quét theo khoảng thời gian. Chưa thêm (chưa cần ở quy mô hiện tại, cần migration).
 - Lỗi DB bên trong các khối `try/except` "cô lập" của pipeline (MR12, MR14) làm hỏng cả giao dịch trên Postgres, nên lần
   commit cuối vẫn lỗi — "cô lập" hiện chỉ đúng với lỗi Python. **Đã sửa ở MR23**: mỗi khối một SAVEPOINT.
-- **Phát hiện bảo mật (chưa sửa, đề xuất đưa vào MR32):** `/login` không chạy bcrypt khi tên đăng nhập không tồn tại, nên
-  thời gian phản hồi (~vài ms so với ~230 ms) để lộ tài khoản nào có thật — dù thông báo lỗi đã giống hệt nhau.
+- **Phát hiện bảo mật (đã sửa ở MR32, [`security-review.md`](security-review.md)):** `/login` không chạy bcrypt khi tên đăng nhập
+  không tồn tại, nên thời gian phản hồi (~vài ms so với ~230 ms) để lộ tài khoản nào có thật — dù thông báo lỗi đã giống hệt nhau.
+  Nay tên không tồn tại được so với một hash giả cùng độ khó (`check_password`).
 - Benchmark tạo tài khoản `bench_*` trong DB dev ở mỗi lần chạy và không tự xoá (tên được in ra để tra lại log). Dữ liệu
   benchmark của MR20 (24 tài khoản `bench_*`, 1.150 lần đăng nhập của `alice`) đã xoá khỏi DB dev ngày 03/10/2026 theo yêu
   cầu của chủ dự án; đo ở MR23 dùng bản sao DB tạm và rollback (dưới).

@@ -6,7 +6,8 @@ const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || "ws://localhost:8000";
 const RECONNECT_DELAY_MS = 3000;
 
 // WebSocket client cho /ws/alerts (nhiệm vụ 5.3) — tự reconnect khi mất
-// kết nối mạng, xác thực bằng JWT admin qua query param.
+// kết nối mạng, xác thực bằng JWT admin qua subprotocol "bearer" (MR32: không
+// đặt token trong URL — máy chủ ghi URL vào access log).
 export function useAlertsSocket(onAlert) {
   const [connected, setConnected] = useState(false);
   const onAlertRef = useRef(onAlert);
@@ -21,7 +22,7 @@ export function useAlertsSocket(onAlert) {
       const token = getAdminToken();
       if (!token) return;
 
-      socket = new WebSocket(`${WS_BASE_URL}/ws/alerts?token=${encodeURIComponent(token)}`);
+      socket = new WebSocket(`${WS_BASE_URL}/ws/alerts`, ["bearer", token]);
 
       socket.onopen = () => setConnected(true);
 

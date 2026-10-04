@@ -68,7 +68,7 @@ def test_password_check_runs_off_the_event_loop(client, db_session, monkeypatch)
     đăng nhập đồng thời phải xếp hàng chờ nhau. Trong luồng của threadpool không có vòng lặp nào đang chạy."""
     import asyncio
 
-    from app.security import verify_password
+    from app.security import check_password
 
     seen = []
 
@@ -78,13 +78,30 @@ def test_password_check_runs_off_the_event_loop(client, db_session, monkeypatch)
             seen.append("event-loop")
         except RuntimeError:
             seen.append("threadpool")
-        return verify_password(password, password_hash)
+        return check_password(password, password_hash)
 
-    monkeypatch.setattr("app.routers.auth.verify_password", spy)
+    monkeypatch.setattr("app.routers.auth.check_password", spy)
     _create_user(db_session, "dave")
     assert client.post("/login", json={"username": "dave", "password": PASSWORD}).status_code == 200
     assert client.post("/login", json={"username": "dave", "password": "SaiRoi"}).status_code == 401
-    assert seen == ["threadpool", "threadpool"]
+    assert client.post("/login", json={"username": "khong-ton-tai", "password": "SaiRoi"}).status_code == 401
+    assert seen == ["threadpool", "threadpool", "threadpool"]
+
+
+def test_unknown_username_costs_the_same_bcrypt_check_as_a_real_one(client, db_session, monkeypatch):
+    """MR32: trước đây tên không tồn tại trả lời ngay (không bcrypt) — thời gian phản hồi lộ tài khoản nào có thật."""
+    import app.security as security
+
+    calls = []
+    real_checkpw = security.bcrypt.checkpw
+    monkeypatch.setattr(security.bcrypt, "checkpw", lambda password, hashed: calls.append(hashed) or real_checkpw(password, hashed))
+    _create_user(db_session, "erin")
+
+    client.post("/login", json={"username": "erin", "password": "SaiRoi"})
+    client.post("/login", json={"username": "khong-ton-tai", "password": "SaiRoi"})
+
+    assert len(calls) == 2
+    assert calls[0].startswith(b"$2b$12$") and calls[1].startswith(b"$2b$12$")  # cùng độ khó
 
 
 def test_login_error_message_identical_for_wrong_password_and_unknown_user(client, db_session):
