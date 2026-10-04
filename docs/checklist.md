@@ -593,8 +593,16 @@ lệ khó không vượt mục tiêu báo nhầm. Mỗi hành vi cập nhật v�
     (phát hiện: nhiều hành vi bị khoá sớm bởi tín hiệu khác trước khi luật riêng đủ dữ kiện)
   - **Kết quả**: 16/21 hành vi đo được trên bộ dữ liệu vững; ma trận 29 hành vi: **vững 23**. Các họ cũ không đổi; 20 kịch bản không
     đổi
-- [ ] **MR29 [Nên, M] Đợt 3 — luật kết hợp**: Tor/VPN/datacenter + quốc gia mới, thiết bị mới hoặc đăng nhập sai; bot UA + đăng
-  nhập sai
+- [x] **MR29 [Nên, M] Đợt 3 — luật kết hợp**: Tor/VPN/datacenter + quốc gia mới, thiết bị mới hoặc đăng nhập sai; bot UA + đăng
+  nhập sai — chi tiết và số đo: [`combined-rules.md`](combined-rules.md)
+  - [x] Đo cả bốn tổ hợp (thiết kế trên bộ hiệu chỉnh, báo số trên bộ đánh giá): giữ **Tor/VPN/datacenter + thiết bị lạ** (báo nhầm 0,75%,
+    toàn bộ là người dùng VPN đổi điện thoại); loại + quốc gia mới (4,06%), + đăng nhập sai (1,04%), bot/script UA + đăng nhập sai (không bắt
+    thêm lần thử nào — bot/script một mình đã cảnh báo từ MR25)
+  - [x] `anonymizer_new_device`: hành động tối thiểu `step_up`, trọng số giữ ở mức IP (0,31) — bản đầu với trọng số đo được cộng với mô hình
+    thành KHOÁ 29/44 lần đăng nhập của người dùng VPN hợp lệ; bản chốt: 0 khoá, 29 OTP
+  - [x] Họ mới: `vn_vps_takeover` (VPS đặt ở Việt Nam — kho IP `datacenter_vn`), `vpn_typo`, `vpn_new_device`
+  - **Kết quả**: VPN/datacenter + thiết bị lạ 83%, VPS trong nước 97% (vững); chỉ luật: 0/23 → 19/23 và 0/30 → 29/30; 18/23 hành vi đo được
+    vững; ma trận 31 hành vi: **vững 25**. Các họ cũ không đổi; 20 kịch bản: chỉ "ngủ đông" từ cảnh báo lên xác thực thêm
 - [ ] **MR30 [Thêm, S] Ngôn ngữ trình duyệt lệch quốc gia của IP** (Accept-Language) — chỉ làm nếu MR27–MR29 xong trước hạn
 - Mục tiêu giai đoạn: ≥ 20 hành vi vững trên khoảng 28
 

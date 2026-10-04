@@ -178,6 +178,15 @@ hệt; kẻ tấn công vẫn bị bắt 100% nhờ tín hiệu khác). 16/21 h�
 Tổng hợp 29 hành vi: **vững 23**, **phụ thuộc hoàn cảnh 3** (nhiều quốc gia cùng lúc, proxy cùng nước, một IP vào nhiều tài khoản),
 **không cảnh báo 2** (datacenter, VPN — cố ý), **mơ hồ có chủ đích 1**.
 
+## Cập nhật sau MR29
+
+MR29 ([`combined-rules.md`](combined-rules.md)) đo bốn luật kết hợp, giữ một: **Tor/VPN/datacenter + thiết bị lạ** (`anonymizer_new_device`,
+ép xác thực thêm). Hai hành vi mới vững: **đăng nhập qua VPN/datacenter bằng thiết bị lạ** (83%, báo nhầm 0,75%) và **chiếm tài khoản qua
+VPS trong nước** (97%). VPN và datacenter MỘT MÌNH vẫn không cảnh báo (cố ý). 18/23 hành vi đo được trên bộ dữ liệu vững.
+
+Tổng hợp 31 hành vi: **vững 25**, **phụ thuộc hoàn cảnh 3** (nhiều quốc gia cùng lúc, proxy cùng nước, một IP vào nhiều tài khoản), **không
+cảnh báo 2** (datacenter, VPN — một mình, cố ý), **mơ hồ có chủ đích 1**.
+
 ## Nguồn dữ liệu
 
 Mọi con số trong bảng lấy TRỰC TIẾP từ tài liệu đã dẫn — không tính lại riêng cho bảng này. `[Đo được thật]` nghĩa là

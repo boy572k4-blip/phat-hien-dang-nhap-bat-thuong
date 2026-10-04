@@ -146,6 +146,7 @@ NOT_EVALUABLE = {
     "otp_guessing": "RBA không có bước xác thực thêm (OTP) — MR28",
     "blocked_retry": "RBA không có khoá tài khoản/IP — MR28",
     "multi_account_success": "IP và User-Agent của RBA là tổng hợp (52% lần đăng nhập hợp lệ có UA mới), 'IP và thiết bị đều lạ' không có nghĩa — MR28",
+    "anonymizer_new_device": "IP của RBA là tổng hợp (danh sách Tor/VPN/datacenter không áp dụng) — MR29",
     "impossible_travel": "RBA không có toạ độ",
     "tor_exit": "IP của RBA là tổng hợp, danh sách Tor công khai không áp dụng",
     "datacenter_ip": "IP của RBA là tổng hợp, danh sách datacenter công khai không áp dụng",

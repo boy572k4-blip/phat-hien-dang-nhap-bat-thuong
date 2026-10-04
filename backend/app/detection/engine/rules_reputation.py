@@ -90,3 +90,43 @@ def blocklist_hit(ctx: RuleContext) -> Finding | None:
         f"Nguồn nằm trong blocklist ({entry.kind} {entry.value}){reason}.",
         {"kind": entry.kind, "value": entry.value, "reason": entry.reason, "added_by": entry.added_by},
     )
+
+
+@rule(
+    id="anonymizer_new_device",
+    title="Đăng nhập qua Tor/VPN/datacenter bằng thiết bị lạ",
+    category=CATEGORY,
+    severity="medium",
+    techniques=("T1090", "T1078"),
+    description=(
+        "IP nguồn thuộc Tor, VPN thương mại hoặc datacenter VÀ thiết bị (User-Agent) chưa từng đăng nhập thành công vào tài khoản (đã có lịch sử) "
+        "— kẻ có mật khẩu giấu nguồn bằng hạ tầng thuê; người dùng VPN thật thường dùng máy của chính mình."
+    ),
+    needs=("account", "user_agent"),
+    min_action="step_up",
+    notes=(
+        "MR29 — luật KẾT HỢP duy nhất được thêm. Hành động tối thiểu `step_up`: chủ tài khoản (vd người dùng VPN đổi điện thoại mới) qua được bằng "
+        "OTP, kẻ chỉ có mật khẩu thì bị chặn — đoán OTP thì `otp_guessing` khoá. Trọng số giữ ở mức của IP (trần 0,31 như `vpn_ip`/`datacenter_ip`), "
+        "KHÔNG cộng thêm: phần \"thiết bị mới\" đã nằm trong nhóm mô hình; bản đầu dùng trọng số đo được (0,57) thì cộng với mô hình thành KHOÁ "
+        "29/44 lần đăng nhập của người dùng VPN hợp lệ đổi điện thoại. Cùng nhóm \"Danh tiếng hạ tầng\" nên gộp bằng max với `tor_exit`/`vpn_ip`/"
+        "`datacenter_ip` (cùng một IP, không đếm trùng). Đã đo và KHÔNG thêm: + quốc gia mới (điểm thoát VPN đổi nước liên tục — khớp nhầm người dùng VPN hợp lệ), + đăng "
+        "nhập sai (khớp người dùng VPN gõ sai mật khẩu bằng máy của mình), bot/script UA + đăng nhập sai (hai luật đó một mình đã đủ cảnh báo từ "
+        "MR25 — không bắt thêm gì, chỉ đếm trùng). Né được bằng cách chép đúng User-Agent của nạn nhân. Số đo: docs/combined-rules.md."
+    ),
+)
+def anonymizer_new_device(ctx: RuleContext) -> Finding | None:
+    a, h = ctx.attempt, ctx.history
+    if h is None or h.n_success == 0 or not a.ua_hash or a.ua_hash in h.known_devices:
+        return None
+    if ctx.intel.is_tor(a.ip):
+        kind, label = "tor", "Tor exit node"
+    elif ctx.intel.in_vpn(a.ip):
+        kind, label = "vpn", "VPN thương mại"
+    elif ctx.intel.in_datacenter(a.ip):
+        kind, label = "datacenter", "datacenter/hosting"
+    else:
+        return None
+    return Finding(
+        f"Tài khoản '{a.username}': đăng nhập {_outcome(a.success)} qua {label} {a.ip} bằng thiết bị chưa từng dùng với tài khoản này.",
+        {"ip": a.ip, "list": kind, "new_device": True},
+    )

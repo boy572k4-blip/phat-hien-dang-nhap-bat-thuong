@@ -33,6 +33,7 @@ VN_POOLS = ("vn_fpt", "vn_vnpt", "vn_viettel")
 FOREIGN_POOLS = ("us", "sg", "th", "kr", "cn", "de", "ru")
 TRAVEL_POOLS = ("sg", "th", "kr")  # điểm đến công tác/du lịch gần, hợp lý cho người dùng Việt Nam
 ANONYMIZER_POOLS = ("tor", "datacenter", "vpn")
+VN_DATACENTER_POOLS = ("datacenter_vn",)  # MR29: dải datacenter (danh sách threat_intel) đặt ở Việt Nam — VPS thuê trong nước
 
 
 @dataclass(frozen=True)
@@ -94,11 +95,40 @@ def _intel_pool(name: str, size: int) -> tuple[IpInfo, ...]:
     return tuple(out)
 
 
+def _vn_datacenter_pool(size: int) -> tuple[IpInfo, ...]:
+    """MR29: IP trong các dải datacenter của danh sách threat_intel mà GeoLite đặt ở Việt Nam (VPS/đám mây trong nước) — kẻ tấn công "ở cùng
+    nước" với nạn nhân. Không đòi có thành phố (dải hosting thường chỉ định vị được quốc gia)."""
+    from app.detection.geoip import lookup_asn, lookup_ip
+
+    rng = random.Random("ip-pool:datacenter_vn")
+    lines = [line.strip() for line in (THREAT_INTEL_DIR / "datacenter_cidrs.txt").read_text(encoding="utf-8").splitlines()]
+    nets = [ipaddress.ip_network(c) for c in lines if c and not c.startswith("#") and ":" not in c]
+
+    def first_host(net):
+        return str(net.network_address + 1) if net.num_addresses > 2 else str(net.network_address)
+
+    vn = [net for net in nets if (geo := lookup_ip(first_host(net))) is not None and geo.country == "VN"]
+    found, seen = [], set()
+    for _ in range(size * 40):
+        if len(found) >= size or not vn:
+            break
+        ip = _random_host(rng.choice(vn), rng)
+        if ip in seen:
+            continue
+        seen.add(ip)
+        geo, asn = lookup_ip(ip), lookup_asn(ip)
+        if geo is None or geo.country != "VN":
+            continue
+        found.append(IpInfo(ip, "datacenter_vn", "VN", geo.city, asn.asn if asn else None, geo.latitude, geo.longitude))
+    return tuple(found)
+
+
 @lru_cache(maxsize=1)
 def build_pools(size: int = POOL_SIZE) -> dict[str, tuple[IpInfo, ...]]:
     """Mọi kho IP, xác định theo seed (cùng máy, cùng bản GeoLite -> cùng kết quả). Lỗi rõ ràng nếu thiếu GeoLite."""
     pools = {name: _geo_pool(name, size) for name in _SPECS}
     pools.update({name: _intel_pool(name, size) for name in ANONYMIZER_POOLS})
+    pools["datacenter_vn"] = _vn_datacenter_pool(size)
     empty = [name for name, ips in pools.items() if len(ips) < 5]
     if empty:
         raise RuntimeError(f"Kho IP quá nhỏ {empty} — thiếu cơ sở GeoLite2 (backend/geoip/) hoặc danh sách threat_intel?")

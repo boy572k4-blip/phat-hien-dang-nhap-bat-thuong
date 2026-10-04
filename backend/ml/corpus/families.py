@@ -17,7 +17,7 @@ import random
 from dataclasses import dataclass
 from typing import Callable
 
-from ml.corpus.ip_pools import ANONYMIZER_POOLS, FOREIGN_POOLS, TRAVEL_POOLS, VN_POOLS, IpInfo
+from ml.corpus.ip_pools import ANONYMIZER_POOLS, FOREIGN_POOLS, TRAVEL_POOLS, VN_DATACENTER_POOLS, VN_POOLS, IpInfo
 
 DAY, HOUR, MINUTE = 86400.0, 3600.0, 60.0
 
@@ -389,6 +389,20 @@ def account_checker(rng, pools, seed):
     return accounts, tuple(history), steps
 
 
+def vn_vps_takeover(rng, pools, seed):
+    """MR29 — kẻ có mật khẩu đúng thuê VPS ở Việt Nam để "ở cùng nước" với nạn nhân (không có quốc gia lạ để dựa vào): 0–2 lần sai rồi đăng
+    nhập được, bằng trình duyệt của kẻ tấn công."""
+    user, home, ua, habit, history = _victim(rng, pools, "vn_vps_takeover", seed)
+    ip = _ip(rng, pools, VN_DATACENTER_POOLS)
+    attacker_ua = rng.choice(BROWSER_UAS)
+    t, steps = rng.uniform(0, DAY - HOUR), []
+    for _ in range(rng.randint(0, 2)):
+        steps.append(Step(user, False, ip, t, attacker_ua, True))
+        t += rng.uniform(10, 120)
+    steps.append(Step(user, True, ip, t, attacker_ua, True))
+    return (user,), history, steps
+
+
 # ------------------------------------------------------------------------------------------------ họ hợp lệ "khó"
 
 
@@ -582,17 +596,39 @@ def event_wifi(rng, pools, seed):
     return accounts, tuple(history), steps
 
 
+def vpn_typo(rng, pools, seed):
+    """MR29 — đối chứng: người dùng VPN gõ sai mật khẩu 1–2 lần rồi đúng, bằng máy của chính mình (đo tổ hợp "VPN + đăng nhập sai")."""
+    user, home, ua, habit, history = _victim(rng, pools, "vpn_typo", seed)
+    ip = _ip(rng, pools, ("vpn",))
+    t, steps = habit + rng.uniform(-HOUR, HOUR), []
+    for _ in range(rng.randint(1, 2)):
+        steps.append(Step(user, False, ip, t, ua))
+        t += rng.uniform(10, 60)
+    steps.append(Step(user, True, ip, t, ua))
+    return (user,), history, steps
+
+
+def vpn_new_device(rng, pools, seed):
+    """MR29 — đối chứng KHÓ cho `anonymizer_new_device`: người dùng VPN đăng nhập qua VPN bằng điện thoại MỚI (chưa từng dùng), 1–2 lần."""
+    user, home, ua, habit, history = _victim(rng, pools, "vpn_new_device", seed)
+    phone = rng.choice([u for u in MOBILE_UAS if u != ua])
+    steps = [Step(user, True, _ip(rng, pools, ("vpn",)), d * DAY + habit + rng.uniform(-HOUR, HOUR), phone) for d in range(rng.randint(1, 2))]
+    return (user,), history, steps
+
+
 FAMILIES: dict[str, tuple[str, Callable]] = {
     **{f.__name__: ("attack", f) for f in (
         brute_force, credential_stuffing, password_spray_slow, distributed_botnet, ua_rotation, account_enumeration,
         impossible_travel, dormant_account, targeted_mimic, same_country_proxy, success_after_failures, anonymizer_login,
         bot_client, country_hop, regular_rhythm, distributed_botnet_local, login_burst,  # 2 họ: MR27
         otp_guessing, locked_hammering, account_checker,  # MR28
+        vn_vps_takeover,  # MR29
     )},
     **{f.__name__: ("benign", f) for f in (
         routine, new_account, typo, heavy_typo, vpn_user, office_nat, business_travel, new_device, mobile_isp_switch, night_login,
         relogin, office_nat_day,  # MR27
         otp_typo, locked_owner, training_lab, event_wifi,  # MR28
+        vpn_typo, vpn_new_device,  # MR29
     )},
 }
 

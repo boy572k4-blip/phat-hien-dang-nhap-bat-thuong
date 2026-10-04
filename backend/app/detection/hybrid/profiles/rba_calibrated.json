@@ -193,8 +193,8 @@
     "calibrated": true,
     "n": 165,
     "ci95": [
-     0.7416,
-     0.9694
+     0.7352,
+     0.9726
     ],
     "source": "corpus_mr24_capped"
    },
@@ -203,8 +203,8 @@
     "calibrated": true,
     "n": 45,
     "ci95": [
-     0.7925,
-     0.9087
+     0.8001,
+     0.9116
     ],
     "source": "corpus_mr24_capped"
    },
@@ -213,20 +213,30 @@
     "calibrated": true,
     "n": 27,
     "ci95": [
-     0.7076,
-     0.8525
+     0.7051,
+     0.8564
     ],
     "source": "corpus_mr24_capped"
    },
    "multi_account_success": {
-    "weight": 0.0564,
+    "weight": 0.0574,
     "calibrated": true,
     "n": 230,
     "ci95": [
-     0.0321,
-     0.099
+     0.0337,
+     0.1027
     ],
     "source": "corpus_mr24"
+   },
+   "anonymizer_new_device": {
+    "weight": 0.31,
+    "calibrated": true,
+    "n": 1097,
+    "ci95": [
+     0.6599,
+     0.8068
+    ],
+    "source": "corpus_mr24_capped"
    }
   },
   "default_weight": 0.05

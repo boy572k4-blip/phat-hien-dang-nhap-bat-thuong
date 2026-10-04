@@ -62,6 +62,12 @@ cửa `/login` bằng chính `app/detection/gate.py`, hai chế độ `--gate se
 (mọi khoá chặn — như chạy thật). Phép đo chỉ tính lần thử được chấm (bỏ bước OTP và lần bị cửa từ chối). Bản chạy: `ml/artifacts/corpus/mr28/`,
 `mr28_full/`. Số đo: [`behavior-expansion-2.md`](behavior-expansion-2.md).
 
+## Mở rộng ở MR29
+
+Thêm 1 họ tấn công (`vn_vps_takeover` — kẻ có mật khẩu dùng VPS đặt ở Việt Nam) và 2 họ hợp lệ khó (`vpn_typo`, `vpn_new_device`): 39 họ,
+1.170 biến thể mỗi phần. Kho IP mới `datacenter_vn` (dải datacenter của danh sách threat_intel mà GeoLite đặt ở Việt Nam; có thể không có thành
+phố). Bản chạy: `ml/artifacts/corpus/mr29/`, `mr29_full/`. Số đo: [`combined-rules.md`](combined-rules.md).
+
 ## Giới hạn
 
 - Hành vi của kẻ tấn công và người dùng do nhóm định nghĩa — ví dụ kẻ tấn công thường dùng IP nước ngoài/ẩn danh, người dùng

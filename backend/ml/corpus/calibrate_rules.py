@@ -46,7 +46,9 @@ PROFILE_PATH = Path(__file__).resolve().parents[2] / "app" / "detection" / "hybr
 # đo độ chính xác. Bản đầu của MR25 ghi 0,0632 (sai khung dữ liệu); sửa ở MR26 — trọng số không bị trần đổi theo.
 RBA_ATTACK_PRIOR = 0.0840
 RBA_VALID = ("brute_force", "credential_stuffing", "password_spray_slow", "dormant_account_login", "rare_network_login")
-CONTEXT_ONLY = ("datacenter_ip", "vpn_ip")
+# MR29: `anonymizer_new_device` cũng chỉ giữ mức của IP — phần còn lại của nó ("thiết bị mới") đã nằm trong nhóm mô hình (`ml_geo`,
+# `hybrid_cp2`); cộng thêm là đếm trùng (đo: người dùng VPN đổi điện thoại bị KHOÁ). Hành động của luật đến từ `min_action="step_up"`.
+CONTEXT_ONLY = ("datacenter_ip", "vpn_ip", "anonymizer_new_device")
 MR21_MIN_ACTIONS = {"brute_force": "alert", "credential_stuffing": "alert", "impossible_travel": "alert", "success_after_failures": "step_up", "blocklist_hit": "lock"}
 MIN_HITS = 20  # dưới mức này không đủ để đo — giữ trọng số cũ (vd blocklist_hit: hành động do `min_action`, không do trọng số)
 N_BOOT = 500

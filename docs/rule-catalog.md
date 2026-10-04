@@ -6,7 +6,7 @@ Mã: [`backend/app/detection/engine/`](../backend/app/detection/engine/) · ki�
 
 ## 1. Tổng quan
 
-**23 luật** trong 4 nhóm; 18 luật mặc định ở chế độ `enforce`, 5 ở chế độ `shadow` (`regular_rhythm`, `country_hop`, `rare_network_login`, `datacenter_ip`, `vpn_ip`) vì chưa được kiểm chứng trên log thật hoặc dễ báo nhầm. 8 luật xác định mang **hành động tối thiểu** (`brute_force`, `credential_stuffing`, `password_spray_slow`, `success_after_failures`, `otp_guessing`, `blocked_retry`, `impossible_travel`, `blocklist_hit`).
+**24 luật** trong 4 nhóm; 19 luật mặc định ở chế độ `enforce`, 5 ở chế độ `shadow` (`regular_rhythm`, `country_hop`, `rare_network_login`, `datacenter_ip`, `vpn_ip`) vì chưa được kiểm chứng trên log thật hoặc dễ báo nhầm. 9 luật xác định mang **hành động tối thiểu** (`brute_force`, `credential_stuffing`, `password_spray_slow`, `success_after_failures`, `otp_guessing`, `blocked_retry`, `impossible_travel`, `blocklist_hit`, `anonymizer_new_device`).
 
 | Mã | Tên | Nhóm | Mức | Chế độ mặc định | Hành động tối thiểu | MITRE ATT&CK |
 |---|---|---|---|---|---|---|
@@ -28,6 +28,7 @@ Mã: [`backend/app/detection/engine/`](../backend/app/detection/engine/) · ki�
 | [`datacenter_ip`](#datacenter_ip) | Đăng nhập từ dải IP datacenter | Danh tiếng hạ tầng | thấp | shadow | — | T1090.002 |
 | [`vpn_ip`](#vpn_ip) | Đăng nhập từ dải IP VPN thương mại | Danh tiếng hạ tầng | thấp | shadow | — | T1090 |
 | [`blocklist_hit`](#blocklist_hit) | Nguồn nằm trong blocklist | Danh tiếng hạ tầng | cao | enforce | `lock` | — |
+| [`anonymizer_new_device`](#anonymizer_new_device) | Đăng nhập qua Tor/VPN/datacenter bằng thiết bị lạ | Danh tiếng hạ tầng | trung bình | enforce | `step_up` | T1090, T1078 |
 | [`impossible_travel`](#impossible_travel) | Di chuyển bất khả thi | Ngữ cảnh tài khoản | cao | enforce | `alert` | T1078 |
 | [`multi_context_simultaneous`](#multi_context_simultaneous) | Đăng nhập cùng lúc từ nhiều quốc gia | Ngữ cảnh tài khoản | cao | enforce | — | T1078 |
 | [`country_hop`](#country_hop) | Tài khoản bị thử từ nhiều quốc gia | Ngữ cảnh tài khoản | trung bình | shadow | — | T1078, T1090 |
@@ -62,8 +63,8 @@ Ghi đè chế độ và tham số theo từng luật bằng JSON (`RuleConfig.f
 | [T1110.001](https://attack.mitre.org/techniques/T1110/001/) | Brute Force: Password Guessing | `brute_force`, `distributed_bruteforce`, `success_after_failures` |
 | [T1110.003](https://attack.mitre.org/techniques/T1110/003/) | Brute Force: Password Spraying | `password_spray_slow` |
 | [T1110.004](https://attack.mitre.org/techniques/T1110/004/) | Brute Force: Credential Stuffing | `credential_stuffing`, `multi_account_success`, `ua_rotation` |
-| [T1078](https://attack.mitre.org/techniques/T1078/) | Valid Accounts | `multi_account_success`, `success_burst`, `impossible_travel`, `multi_context_simultaneous`, `country_hop`, `dormant_account_login`, `rare_network_login` |
-| [T1090](https://attack.mitre.org/techniques/T1090/) | Proxy | `distributed_bruteforce`, `country_hop`, `vpn_ip` |
+| [T1078](https://attack.mitre.org/techniques/T1078/) | Valid Accounts | `multi_account_success`, `success_burst`, `impossible_travel`, `multi_context_simultaneous`, `country_hop`, `dormant_account_login`, `rare_network_login`, `anonymizer_new_device` |
+| [T1090](https://attack.mitre.org/techniques/T1090/) | Proxy | `distributed_bruteforce`, `country_hop`, `vpn_ip`, `anonymizer_new_device` |
 | [T1090.002](https://attack.mitre.org/techniques/T1090/002/) | Proxy: External Proxy | `datacenter_ip` |
 | [T1090.003](https://attack.mitre.org/techniques/T1090/003/) | Proxy: Multi-hop Proxy | `tor_exit` |
 | [T1589](https://attack.mitre.org/techniques/T1589/) | Gather Victim Identity Information | `username_enumeration` |
@@ -75,11 +76,11 @@ Thiếu dữ liệu thì luật tương ứng bị bỏ qua (xem mục 2).
 
 | Dữ liệu | Ý nghĩa | Luật cần |
 |---|---|---|
-| `account` | tài khoản tồn tại (không phải tên đăng nhập bịa) | `success_after_failures`, `otp_guessing`, `multi_account_success`, `success_burst`, `impossible_travel`, `multi_context_simultaneous`, `dormant_account_login`, `rare_network_login` |
+| `account` | tài khoản tồn tại (không phải tên đăng nhập bịa) | `success_after_failures`, `otp_guessing`, `multi_account_success`, `success_burst`, `impossible_travel`, `multi_context_simultaneous`, `dormant_account_login`, `rare_network_login`, `anonymizer_new_device` |
 | `asn` | ASN của IP (cần file GeoLite2-ASN.mmdb) | `rare_network_login` |
 | `country` | quốc gia của IP (GeoIP) | `multi_context_simultaneous`, `country_hop` |
 | `geo` | toạ độ của IP (GeoLite2-City) | `impossible_travel` |
-| `user_agent` | User-Agent của request | `ua_rotation` |
+| `user_agent` | User-Agent của request | `ua_rotation`, `anonymizer_new_device` |
 | `history` | lịch sử tài khoản (DB hoặc luồng sự kiện đã phát) | `impossible_travel`, `dormant_account_login` |
 | `tor_list` | danh sách Tor exit node (python -m scripts.update_threat_feeds) | `tor_exit` |
 | `datacenter_list` | danh sách dải IP datacenter | `datacenter_ip` |
@@ -333,6 +334,15 @@ IP, dải CIDR, ASN hoặc tên đăng nhập của lần thử nằm trong bloc
 - **MITRE ATT&CK:** không ánh xạ kỹ thuật cụ thể
 - **Dữ liệu cần:** không (chỉ cần `LoginAttempt`)
 - **Ghi chú:** Quyết định của con người nên không ánh xạ kỹ thuật MITRE cụ thể. Hạn dùng của mục chặn so với thời gian của sự kiện. MR16 bổ sung hành động chặn thật. Hành động tối thiểu `lock` — trước MR21 là cơ chế "luật ghi đè" riêng của hybrid risk engine, giờ là trường hợp đặc biệt của `min_action`. Giữ ở MR25: bộ MR24 không có nguồn nào trong blocklist nên không đo được — đây là quyết định của quản trị viên, không phải ước lượng thống kê.
+
+#### <a id="anonymizer_new_device"></a>`anonymizer_new_device` — Đăng nhập qua Tor/VPN/datacenter bằng thiết bị lạ
+
+IP nguồn thuộc Tor, VPN thương mại hoặc datacenter VÀ thiết bị (User-Agent) chưa từng đăng nhập thành công vào tài khoản (đã có lịch sử) — kẻ có mật khẩu giấu nguồn bằng hạ tầng thuê; người dùng VPN thật thường dùng máy của chính mình.
+
+- **Mức nghiêm trọng:** trung bình · **chế độ mặc định:** enforce (bằng chứng + được ép hành động tối thiểu) · **hành động tối thiểu:** `step_up` (xác thực thêm)
+- **MITRE ATT&CK:** T1090 (Proxy), T1078 (Valid Accounts)
+- **Dữ liệu cần:** `account`, `user_agent`
+- **Ghi chú:** MR29 — luật KẾT HỢP duy nhất được thêm. Hành động tối thiểu `step_up`: chủ tài khoản (vd người dùng VPN đổi điện thoại mới) qua được bằng OTP, kẻ chỉ có mật khẩu thì bị chặn — đoán OTP thì `otp_guessing` khoá. Trọng số giữ ở mức của IP (trần 0,31 như `vpn_ip`/`datacenter_ip`), KHÔNG cộng thêm: phần "thiết bị mới" đã nằm trong nhóm mô hình; bản đầu dùng trọng số đo được (0,57) thì cộng với mô hình thành KHOÁ 29/44 lần đăng nhập của người dùng VPN hợp lệ đổi điện thoại. Cùng nhóm "Danh tiếng hạ tầng" nên gộp bằng max với `tor_exit`/`vpn_ip`/`datacenter_ip` (cùng một IP, không đếm trùng). Đã đo và KHÔNG thêm: + quốc gia mới (điểm thoát VPN đổi nước liên tục — khớp nhầm người dùng VPN hợp lệ), + đăng nhập sai (khớp người dùng VPN gõ sai mật khẩu bằng máy của mình), bot/script UA + đăng nhập sai (hai luật đó một mình đã đủ cảnh báo từ MR25 — không bắt thêm gì, chỉ đếm trùng). Né được bằng cách chép đúng User-Agent của nạn nhân. Số đo: docs/combined-rules.md.
 
 ### Ngữ cảnh tài khoản
 

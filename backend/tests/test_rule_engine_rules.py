@@ -558,6 +558,22 @@ def test_datacenter_and_vpn_ranges_are_flagged_in_shadow_mode():
     assert fired([home], "datacenter_ip") == [] and fired([home], "vpn_ip") == [] and fired([home], "tor_exit") == []
 
 
+def test_anonymizer_new_device_needs_an_anonymizing_ip_and_a_device_new_to_an_account_with_history():
+    """MR29 — luật kết hợp: Tor/VPN/datacenter VÀ thiết bị chưa từng đăng nhập thành công vào tài khoản (đã có lịch sử)."""
+    engine = RuleEngine(intel=intel())
+    engine.evaluate(make(0, success=True, ip="113.160.1.1", user_agent="Home browser"))  # lịch sử: alice ở nhà, máy quen
+    vpn = hit(engine.evaluate(make(10, success=True, ip="185.159.157.200", user_agent="Attacker browser")), "anonymizer_new_device")
+    assert vpn.evidence["list"] == "vpn" and vpn.mode == "enforce" and set(vpn.techniques) == {"T1090", "T1078"}
+    cloud = hit(engine.evaluate(make(20, ip="34.100.1.1", user_agent="Attacker 2")), "anonymizer_new_device")  # thất bại cũng tính
+    assert cloud.evidence["list"] == "datacenter" and "thất bại" in cloud.message
+    assert hit(engine.evaluate(make(30, ip="185.220.101.1", user_agent="Tor Browser")), "anonymizer_new_device").evidence["list"] == "tor"
+    own_device = engine.evaluate(make(40, success=True, ip="185.159.157.200", user_agent="Home browser"))
+    assert "anonymizer_new_device" not in own_device.by_rule() and "vpn_ip" in own_device.by_rule()  # người dùng VPN bằng máy của mình
+    assert "anonymizer_new_device" not in engine.evaluate(make(50, success=True, ip="113.160.1.2", user_agent="New phone")).by_rule()  # IP thường
+    fresh = RuleEngine(intel=intel()).evaluate(make(0, username="newbie", success=True, ip="185.159.157.200", user_agent="X"))
+    assert "anonymizer_new_device" not in fresh.by_rule()  # chưa có lịch sử: lần đầu của ai cũng "thiết bị mới"
+
+
 def test_reputation_rules_are_skipped_without_their_lists():
     result = RuleEngine().evaluate(make(0, ip="185.220.101.1"))  # engine mặc định: chưa nạp danh sách nào
     assert fired([result], "tor_exit") == [] and "Tor" in result.skipped["tor_exit"] and "datacenter" in result.skipped["datacenter_ip"] and "VPN" in result.skipped["vpn_ip"]

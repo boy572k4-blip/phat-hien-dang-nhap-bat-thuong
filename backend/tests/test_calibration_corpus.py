@@ -43,14 +43,14 @@ def test_labels_attack_variants_have_attacker_steps_benign_variants_have_none(po
 
 
 def test_pool_ips_are_real_and_geolocate_as_recorded(pools):
-    from ml.corpus.ip_pools import ANONYMIZER_POOLS
+    from ml.corpus.ip_pools import ANONYMIZER_POOLS, VN_DATACENTER_POOLS
 
     for name, ips in pools.items():
         assert len(ips) >= 5, name
         for info in ips[:5]:
             geo, asn = lookup_ip(info.ip), lookup_asn(info.ip)
             assert (geo.country if geo else None) == info.country and (asn.asn if asn else None) == info.asn
-            if name not in ANONYMIZER_POOLS:
+            if name not in ANONYMIZER_POOLS + VN_DATACENTER_POOLS:
                 assert info.latitude is not None and info.city is not None
 
 
@@ -154,3 +154,20 @@ def test_the_corpus_runner_reproduces_the_login_door_for_locks_and_otp_failures(
     assert sum(s["kind"] == "otp_fail" for s in guess["steps"]) == 20
     last = [s for s in guess["steps"] if run.scored(s)][-1]
     assert any(h[0] == "otp_guessing" for h in last["hits"]) and last["action"] == "lock"
+
+
+def test_mr29_families_hide_behind_rented_or_vpn_infrastructure(pools):
+    from app.detection.engine.intel import CidrSet
+    from ml.corpus.ip_pools import THREAT_INTEL_DIR
+
+    datacenter = CidrSet([line.strip() for line in (THREAT_INTEL_DIR / "datacenter_cidrs.txt").read_text(encoding="utf-8").splitlines()
+                          if line.strip() and not line.startswith("#")])
+    assert all(info.country == "VN" and info.ip in datacenter for info in pools["datacenter_vn"])  # VPS đặt ở Việt Nam, đúng danh sách
+    for seed in range(10):
+        takeover = build_variant("vn_vps_takeover", seed, pools)
+        assert {s.ip.pool for s in takeover.steps} == {"datacenter_vn"} and takeover.steps[-1].success
+        typo = build_variant("vpn_typo", seed, pools)
+        assert typo.kind == "benign" and not typo.steps[0].success and {s.user_agent for s in typo.steps} <= {h.user_agent for h in typo.history}
+        new_phone = build_variant("vpn_new_device", seed, pools)
+        assert not {s.user_agent for s in new_phone.steps} & {h.user_agent for h in new_phone.history}
+

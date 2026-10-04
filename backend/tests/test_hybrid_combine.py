@@ -131,7 +131,9 @@ def test_reputation_rules_describe_one_ip_so_the_group_takes_the_max_not_noisy_o
 
 def test_reputation_category_constant_is_a_real_registry_category():
     assert REPUTATION_CATEGORY in CATEGORIES
-    assert {rid for rid, spec in REGISTRY.items() if spec.category == REPUTATION_CATEGORY} == {"tor_exit", "datacenter_ip", "vpn_ip", "blocklist_hit"}
+    assert {rid for rid, spec in REGISTRY.items() if spec.category == REPUTATION_CATEGORY} == {
+        "tor_exit", "datacenter_ip", "vpn_ip", "blocklist_hit", "anonymizer_new_device",  # MR29: luật kết hợp cùng nhóm (gộp bằng max)
+    }
 
 
 def test_two_rules_in_the_same_group_combine_via_noisy_or_not_just_the_max():
@@ -188,6 +190,7 @@ def test_the_real_registry_ships_the_min_actions_settled_by_mr25():
         "success_after_failures": "step_up", "blocklist_hit": "lock",
         "password_spray_slow": "alert",  # MR27: chỉ phạm vi IP, kèm điều kiện tỉ lệ thành công
         "otp_guessing": "lock", "blocked_retry": "step_up",  # MR28
+        "anonymizer_new_device": "step_up",  # MR29
     }
 
 

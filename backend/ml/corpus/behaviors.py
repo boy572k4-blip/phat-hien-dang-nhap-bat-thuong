@@ -35,12 +35,12 @@ from app.detection.engine.types import RuleHit
 from app.detection.hybrid import HybridProfile, RuleWeights, combine_risk
 from ml.corpus.calibrate_rules import CORPUS_DIR, PROFILE_PATH, calibrate, load_records, metrics, rule_hits
 
-RUN_DIR = CORPUS_DIR / "mr28"
-FULL_GATE_DIR = CORPUS_DIR / "mr28_full"
+RUN_DIR = CORPUS_DIR / "mr29"
+FULL_GATE_DIR = CORPUS_DIR / "mr29_full"
 REPORT_PATH = RUN_DIR / "behaviors_report.json"
 MIN_OWN_DETECTION = 0.5
 MAX_OWN_FP = 0.01
-NEW_RULES = ("success_burst", "otp_guessing", "blocked_retry", "multi_account_success")  # MR27, MR28
+NEW_RULES = ("success_burst", "otp_guessing", "blocked_retry", "multi_account_success", "anonymizer_new_device")  # MR27, MR28, MR29
 
 # hành vi -> (họ tấn công của bộ MR24, tín hiệu riêng[, kho IP của lần thử độc hại]). Tín hiệu: mã luật, "ml" (hybrid_cp2) hoặc "ml_geo"
 # (mô hình địa lý-thời gian). Kho IP: chỉ tính biến thể mà lần thử độc hại đi qua kho đó (họ "ẩn danh" trộn Tor, VPN, datacenter).
@@ -58,6 +58,8 @@ BEHAVIORS: dict[str, tuple] = {
     "Thử từ nhiều quốc gia": (("country_hop",), ("country_hop",)),
     "Đăng nhập qua Tor": (("anonymizer_login",), ("tor_exit",), ("tor",)),
     "Đăng nhập qua VPN/datacenter (một mình cố ý không cảnh báo, MR25)": (("anonymizer_login",), ("vpn_ip", "datacenter_ip"), ("vpn", "datacenter")),
+    "Đăng nhập qua VPN/datacenter bằng thiết bị lạ (MR29)": (("anonymizer_login",), ("anonymizer_new_device",), ("vpn", "datacenter")),
+    "Chiếm tài khoản qua VPS trong nước (MR29)": (("vn_vps_takeover",), ("anonymizer_new_device",)),
     "Di chuyển bất khả thi": (("impossible_travel",), ("impossible_travel",)),
     "Đăng nhập thành công dồn dập": (("login_burst",), ("success_burst",)),
     "Đoán mã OTP liên tục": (("otp_guessing",), ("otp_guessing",)),

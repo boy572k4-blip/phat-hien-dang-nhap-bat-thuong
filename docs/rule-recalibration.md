@@ -28,7 +28,8 @@ venv\Scripts\python.exe -m ml.corpus.calibrate_rules --write  # và ghi trọng 
     thử hợp lệ nào nên LR chỉ bị chặn bởi cỡ mẫu (~1.300 lần thử hợp lệ) và ra 0,75–0,99 — con số đó nói "luật mạnh trên kịch
     bản nhóm tự dựng", không chứng minh được báo nhầm thật < 1/1.300. Để nguyên thì MỘT luật tự **khoá** người dùng (vd di
     chuyển bất khả thi — VPN bật/tắt là nguồn báo nhầm kinh điển của luật này).
-  - `datacenter_ip`, `vpn_ip` ≤ **0,31** (ngay dưới `alert`): một mình loại IP không đủ cảnh báo. Tử số LR ("bao nhiêu phần
+  - `datacenter_ip`, `vpn_ip` ≤ **0,31** (ngay dưới `alert`): một mình loại IP không đủ cảnh báo. (MR29: luật kết hợp `anonymizer_new_device`
+    cũng giữ ở mức này — phần "thiết bị mới" của nó mô hình đã tính, xem [`combined-rules.md`](combined-rules.md).) Tử số LR ("bao nhiêu phần
     tấn công đi qua datacenter") do nhóm chọn khi dựng họ tấn công; VPN công ty/đám mây là chuyện thường của người dùng thật.
 - **Nhóm danh tiếng gộp bằng max** (trước là noisy-OR): Tor/datacenter/VPN/blocklist là thuộc tính của CÙNG một IP — 43/56 lần
   thử VPN hợp lệ ở bộ hiệu chỉnh khớp cả `vpn_ip` lẫn `datacenter_ip`. Cùng lập luận "hai mô hình gộp bằng max" của MR22.
