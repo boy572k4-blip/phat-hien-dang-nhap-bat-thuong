@@ -608,12 +608,18 @@ lệ khó không vượt mục tiêu báo nhầm. Mỗi hành vi cập nhật v�
 
 ## Giai đoạn J — Dữ liệu thật và tự bảo vệ (tuần 4)
 
-- [ ] **MR31 [Nên, L] Kiểm chứng trên log thật LANL** (hỏi trước khi tải ~12 GB)
-  - [ ] ETL `auth` + `redteam` (đọc luồng, có thể lấy mẫu theo ngày), chia theo thời gian
-  - [ ] Đặc trưng hành vi theo user: máy mới, giờ, loại xác thực, lan sang nhiều máy; Isolation Forest + baseline đơn giản
-  - [ ] So với kết quả đã công bố trên LANL (tra cứu bài báo)
+- [x] **MR31 [Nên, L] Kiểm chứng trên log thật LANL** — chi tiết và số đo: [`lanl-validation.md`](lanl-validation.md)
+  - [x] ETL `auth` + `redteam` ([`ml/lanl/etl.py`](../backend/ml/lanl/etl.py), DuckDB đọc luồng tệp nén, chỉ tài khoản người dùng:
+    341,7 triệu sự kiện, 125,9 triệu lần đăng nhập); mẫu MỌI người dùng bị tấn công + 20% còn lại (trọng số 5); chia theo thời gian như
+    Tuor et al. 2018: ngày 1–12 học, 13–58 kiểm tra, bỏ cuối tuần/ngày lễ (nhận từ chu kỳ 7 ngày của số lần đăng nhập)
+  - [x] Đặc trưng theo lịch sử tài khoản ([`ml/lanl/features.py`](../backend/ml/lanl/features.py)): máy nguồn/đích mới, kiểu xác thực
+    mới, giờ hiếm, đếm 1 giờ, số máy đích mới trong 1 giờ; Isolation Forest + luật đếm cờ "mới" + từng đặc trưng
+    ([`ml/lanl/evaluate.py`](../backend/ml/lanl/evaluate.py))
+  - [x] So với Tuor et al. 2018 (user-ngày AUC: Isolation Forest 0,763, RNN tốt nhất 0,876; sự kiện: RNN ký tự 0,98): đồ án user-ngày
+    AUC 0,873 [0,841–0,900] (Isolation Forest), 0,852 (luật đếm cờ); sự kiện 0,824 — KHÔNG cùng điều kiện (chỉ LogOn, đặc trưng khác),
+    ghi rõ ở báo cáo; thực tế: xem 200 người/ngày (trong ~8.260) chỉ bắt 12,6% user-ngày bị tấn công (`new_dst_1h`: 24,1%)
   - Xong khi: báo cáo riêng ghi rõ đây là kiểm chứng PHƯƠNG PHÁP trên log thật (log đăng nhập Windows nội bộ, khác cấu trúc web,
-    không nối vào `/login`)
+    không nối vào `/login`) — đạt; dữ liệu không vào git
 - [ ] **MR32 [Lõi, S] Hệ thống tự bảo vệ mình**
   - [ ] `/admin/login` hiện không giới hạn số lần thử, không ghi log, không qua phát hiện (`routers/admin.py`) → giới hạn số lần,
     khoá tạm, ghi audit

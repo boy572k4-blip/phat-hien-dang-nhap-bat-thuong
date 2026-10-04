@@ -25,6 +25,7 @@ backend/logs/
 backend/ml/artifacts/
 # Bộ dữ liệu RBA (mẫu Parquet sinh từ file zip ~9GB) và danh sách threat-intel tải về
 backend/ml/data/rba/
+backend/ml/data/lanl/
 backend/threat_intel/
 *.db
 *.sqlite3
