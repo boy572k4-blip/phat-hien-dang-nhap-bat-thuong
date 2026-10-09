@@ -35,3 +35,7 @@ backend/threat_intel/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Độ phủ test (MR34: pytest --cov)
+.coverage
+htmlcov/

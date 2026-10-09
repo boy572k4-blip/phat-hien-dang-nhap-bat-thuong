@@ -35,3 +35,5 @@ user-agents==2.2.0
 pytest==8.3.4
 httpx==0.28.1
 fakeredis==2.26.2  # giả lập Redis trong test, không cần Docker khi chạy pytest
+pytest-cov==7.1.0  # MR34: đo độ phủ test
+ruff==0.16.10  # MR34: kiểm tra lỗi tĩnh (chỉ `ruff check`, không định dạng lại)

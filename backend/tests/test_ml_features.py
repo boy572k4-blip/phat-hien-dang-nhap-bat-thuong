@@ -32,7 +32,7 @@ def test_new_location_and_device_detected_after_history_built():
     state = UserHistoryState()
     now = datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc)
 
-    f1 = compute_features(state, country="VN", city="Hanoi", latitude=21.03, longitude=105.85, device_fingerprint="fp1", created_at=now)
+    compute_features(state, country="VN", city="Hanoi", latitude=21.03, longitude=105.85, device_fingerprint="fp1", created_at=now)
     update_state(state, country="VN", city="Hanoi", latitude=21.03, longitude=105.85, device_fingerprint="fp1", created_at=now)
 
     later = now + timedelta(days=1)

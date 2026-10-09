@@ -646,8 +646,17 @@ lệ khó không vượt mục tiêu báo nhầm. Mỗi hành vi cập nhật v�
 
 ## Giai đoạn K — Nghiệm thu và đóng băng (tuần 5)
 
-- [ ] **MR34 [Lõi, M] Nghiệm thu toàn bộ**: regression + độ phủ test (`pytest-cov`); E2E trình duyệt cho mọi hành vi vững thao
-  tác được qua UI; benchmark (tài khoản mới); soak 60 phút; sửa lỗi chặn demo
+- [x] **MR34 [Lõi, M] Nghiệm thu toàn bộ** — chi tiết: [`acceptance-mr34.md`](acceptance-mr34.md)
+  - [x] Hồi quy 900/900; độ phủ (`pytest-cov`, cài ở MR34) tổng 80,4%, mã chạy thật `app/` 96–98%; `ruff check` (nhóm bắt lỗi F/E9,
+    `backend/ruff.toml`) sạch
+  - [x] E2E trình duyệt + 4 script tấn công trên bản sao DB: 10 test case đạt (OTP, cảnh báo real-time có giải thích, khoá + mở khoá,
+    phản hồi, bản đồ đường bay, 4 trang quản trị); không lỗi server/console
+  - [x] Benchmark tài khoản mới: tuần tự trung vị 311 ms (MR20: 319), 10 đồng thời p95 791 ms (MR20: 855), 0 lỗi
+  - [x] Soak 60 phút: 0 lỗi/timeout, bộ nhớ 290 → 211 MB (không rò rỉ); bước nhảy độ trễ ở phút 16 giải thích được (luật
+    `success_burst` đẩy dần lên OTP, mỗi OTP thêm một lần bcrypt)
+  - [x] Sửa 2 lỗi chặn demo: gõ sai mật khẩu ở web app đăng xuất quản trị viên (lỗi của MR32; frontend gắn token quản trị vào cả
+    `/login`); script tấn công khoá IP máy người trình bày (nay giả lập IP kẻ tấn công, User-Agent trình duyệt). Thêm: ngưỡng/IP của
+    2 script, benchmark xoay vòng tài khoản (`--accounts`), soak 25 tài khoản + đo bộ nhớ
 - [ ] **MR35 [Lõi, M] Đồng bộ tài liệu với kiến trúc mới**: README, sơ đồ kiến trúc, api-contract, db-schema, getting-started,
   model card, ma trận phủ hành vi, hướng dẫn tái lập; tài liệu cũ đánh dấu "lịch sử"
 - [ ] **MR36 [Lõi, S] Demo chắc chắn**: khởi động một lệnh (docker compose cả backend + frontend, hoặc script), script reset dữ

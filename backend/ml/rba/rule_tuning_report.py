@@ -119,7 +119,6 @@ def _chosen_cells(entry: Mapping[str, Any], procedure: str, budget: float) -> st
         best = rungs[-1]
         return f"**không chọn được** (bậc chặt nhất `{best['params']}` vẫn {_fa(best['train']['fa10k'])}) | — | —"
     row, ci = rungs[chosen - 1], entry["test_ci"].get(procedure, {})
-    where = "train → test" if procedure == "train_only" else "train / val → test"
     trail = f"{_fa(row['train']['fa10k'])}" + ("" if procedure == "train_only" else f" / {_fa(row['val']['fa10k'])}") + f" → {_fa(row['test']['fa10k'])}{_ci(ci.get('fa10k'), _fa)}"
     same = " (= mặc định)" if chosen == entry["default_rung"] else ""
     return f"**`{row['params']}`**{same} | {trail} | {_pct(row['test']['recall'])}{_ci(ci.get('recall'), _pct)}"

@@ -137,7 +137,7 @@ def render(registry: Mapping[str, RuleSpec] | None = None) -> str:
                 "",
                 f"- **Mức nghiêm trọng:** {SEVERITY_VI[spec.severity]} · **chế độ mặc định:** {MODE_VI[spec.default_mode]}"
                 + (f" · **hành động tối thiểu:** {MIN_ACTION_VI[spec.min_action]}" if spec.min_action else ""),
-                f"- **MITRE ATT&CK:** " + (", ".join(f"{t} ({TECHNIQUES[t]})" for t in spec.techniques) if spec.techniques else "không ánh xạ kỹ thuật cụ thể"),
+                "- **MITRE ATT&CK:** " + (", ".join(f"{t} ({TECHNIQUES[t]})" for t in spec.techniques) if spec.techniques else "không ánh xạ kỹ thuật cụ thể"),
                 "- **Dữ liệu cần:** " + (", ".join(f"`{n}`" for n in spec.needs) if spec.needs else "không (chỉ cần `LoginAttempt`)"),
             ]
             if spec.notes:

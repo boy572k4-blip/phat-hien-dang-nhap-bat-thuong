@@ -73,7 +73,7 @@ def _stage_global(con: duckdb.DuckDBPyConnection) -> None:
     con.execute("CREATE OR REPLACE TEMP TABLE ev_go AS SELECT * FROM ev_g WHERE row_id IN (SELECT row_id FROM out_rows)")
 
     def cumulative(name: str, key_expr: str | None) -> None:
-        partition = f"PARTITION BY k " if key_expr else ""
+        partition = "PARTITION BY k " if key_expr else ""
         key_select = f"{key_expr} AS k, " if key_expr else ""
         group_by = "1, 2" if key_expr else "1"
         join_on = "e.t = cum.t" + (f" AND {key_expr.replace('k_', 'e.k_')} = cum.k" if key_expr else "")

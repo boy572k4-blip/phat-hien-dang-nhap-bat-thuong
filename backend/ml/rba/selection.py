@@ -287,7 +287,7 @@ def selection_markdown(result: dict, title: str) -> str:
             )
         lines.append("")
     dropped = [g for g in ALL_GROUPS if g not in result["selected_groups"]]
-    lines.append("Kết quả: giữ " + ", ".join(f"`{g}`" for g in result["selected_groups"]) + (f"; bỏ " + ", ".join(f"`{g}`" for g in dropped) if dropped else " (không bỏ nhóm nào)"))
+    lines.append("Kết quả: giữ " + ", ".join(f"`{g}`" for g in result["selected_groups"]) + ("; bỏ " + ", ".join(f"`{g}`" for g in dropped) if dropped else " (không bỏ nhóm nào)"))
     return "\n".join(lines)
 
 

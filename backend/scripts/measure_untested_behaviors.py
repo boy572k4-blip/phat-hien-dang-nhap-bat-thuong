@@ -65,12 +65,11 @@ def _rule_fired_on_last_event(session_factory, *, before_iso_offset_s: float) ->
     không chỉ luật đang quan tâm — tiện kiểm tra chéo."""
     from app.detection.engine.types import LoginAttempt
     from app.detection.rule_engine_runtime import build_rule_engine
-    from app.models import LoginEvent, User
+    from app.models import LoginEvent
 
     db = session_factory()
     try:
         row = db.query(LoginEvent).order_by(LoginEvent.id.desc()).first()
-        user = db.query(User).filter(User.id == row.user_id).first() if row.user_id else None
         attempt = LoginAttempt(
             ts=row.created_at.replace(tzinfo=timezone.utc).timestamp() if row.created_at.tzinfo is None else row.created_at.timestamp(),
             username=row.attempted_username, success=row.success, ip=row.ip_address,

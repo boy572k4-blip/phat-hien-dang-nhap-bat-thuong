@@ -1,0 +1,6 @@
+# MR34: chỉ bật nhóm bắt LỖI (pyflakes F: tên chưa định nghĩa, import/biến không dùng...; E9: lỗi cú pháp/IO), không bật luật kiểu cách
+# và không dùng `ruff format` — định dạng lại ~22 nghìn dòng chỉ tạo diff lớn mà không sửa lỗi nào. Chạy: venv\Scripts\ruff.exe check .
+extend-exclude = ["venv", "alembic/versions"]
+
+[lint]
+select = ["F", "E9"]

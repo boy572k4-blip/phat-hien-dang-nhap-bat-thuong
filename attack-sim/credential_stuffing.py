@@ -15,8 +15,7 @@ from __future__ import annotations
 import argparse
 import time
 
-import httpx
-from common import add_common_args
+from common import add_common_args, make_client
 
 DEFAULT_VICTIM_COUNT = 12
 
@@ -25,11 +24,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--victims", type=int, default=DEFAULT_VICTIM_COUNT, help="Số username khác nhau sẽ thử")
     parser.add_argument("--prefix", default="stuffing_victim", help="Tiền tố username giả")
-    add_common_args(parser)
+    add_common_args(parser, default_source_ip="203.0.113.20")  # TEST-NET-3 (RFC 5737): IP giả, không thuộc ai
     args = parser.parse_args()
 
     print(f"[credential_stuffing] Thử {args.victims} username khác nhau, cùng 1 IP nguồn...")
-    with httpx.Client(timeout=10.0) as client:
+    with make_client(args) as client:
         for i in range(1, args.victims + 1):
             username = f"{args.prefix}_{i}"
             response = client.post(
@@ -39,7 +38,7 @@ def main() -> None:
             print(f"  {username}: HTTP {response.status_code}")
             time.sleep(args.delay)
 
-    print("[credential_stuffing] Xong. Kiểm tra dashboard -> mục Cảnh báo phải có alert kiểu 'credential_stuffing'.")
+    print("[credential_stuffing] Xong. Dashboard -> cảnh báo nhóm 'Đoán và dò mật khẩu' (tên không tồn tại -> username_enumeration) và IP nguồn bị khoá (423).")
 
 
 if __name__ == "__main__":

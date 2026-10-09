@@ -454,7 +454,7 @@ def main() -> int:
 
     say("nạp bảng đặc trưng, mô hình và tạo bảng 'thường thấy'")
     world = World.load(hybrid_name=hybrid_name)
-    say(f"ngưỡng hybrid (val): " + ", ".join(f"FPR {t:.1%} → {v:.3f}" for t, v in world.thresholds.items()))
+    say("ngưỡng hybrid (val): " + ", ".join(f"FPR {t:.1%} → {v:.3f}" for t, v in world.thresholds.items()))
     if what in ("reference", "all"):
         path = world.reference.save()
         say(f"đã lưu {path} ({world.reference.n_rows:,} dòng, chữ ký đặc trưng {world.reference.signature})")

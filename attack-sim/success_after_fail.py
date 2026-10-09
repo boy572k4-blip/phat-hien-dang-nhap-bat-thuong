@@ -18,10 +18,9 @@ from __future__ import annotations
 import argparse
 import time
 
-import httpx
-from common import add_common_args
+from common import add_common_args, make_client
 
-DEFAULT_FAIL_COUNT = 4
+DEFAULT_FAIL_COUNT = 5  # MR34: đúng ngưỡng min_fails = 5 của luật success_after_failures (4 lần thì luật không chạy)
 
 
 def main() -> None:
@@ -29,11 +28,11 @@ def main() -> None:
     parser.add_argument("--target", required=True, help="Username")
     parser.add_argument("--correct-password", required=True, help="Mật khẩu ĐÚNG của tài khoản")
     parser.add_argument("--fail-count", type=int, default=DEFAULT_FAIL_COUNT)
-    add_common_args(parser)
+    add_common_args(parser, default_source_ip="203.0.113.30")  # TEST-NET-3 (RFC 5737): IP giả, không thuộc ai
     args = parser.parse_args()
 
     print(f"[success_after_fail] {args.fail_count} lần sai rồi 1 lần đúng cho '{args.target}'...")
-    with httpx.Client(timeout=10.0) as client:
+    with make_client(args) as client:
         for i in range(1, args.fail_count + 1):
             client.post(f"{args.base_url}/login", json={"username": args.target, "password": f"sai-{i}"})
             print(f"  fail {i}/{args.fail_count}")
@@ -45,7 +44,7 @@ def main() -> None:
         )
         print(f"  đăng nhập ĐÚNG: HTTP {response.status_code} -> {response.json()}")
 
-    print("[success_after_fail] Xong. Kiểm tra dashboard -> risk_score cao ngay lần cuối + alert 'high_risk_score'.")
+    print("[success_after_fail] Xong. Lần đúng phải bị bắt xác thực thêm (step_up_required, luật success_after_failures) + cảnh báo trên dashboard.")
 
 
 if __name__ == "__main__":

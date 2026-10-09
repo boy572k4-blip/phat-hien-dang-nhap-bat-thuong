@@ -49,20 +49,22 @@ BENCH_PASSWORD = "BenchPassword-2026"
 CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 
-def create_fresh_account() -> tuple[str, str]:
-    """Tài khoản mới tinh (chưa có lịch sử đăng nhập) trong DB dev mà server đang dùng."""
+def create_fresh_accounts(count: int = 1) -> list[str]:
+    """Tài khoản mới tinh (chưa có lịch sử đăng nhập) trong DB mà server đang dùng — cùng mật khẩu `BENCH_PASSWORD`."""
     from app.database import SessionLocal
     from app.models import User
     from app.security import hash_password
 
-    username = f"bench_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    stamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    usernames = [f"bench_{stamp}" + (f"_{i:02d}" if count > 1 else "") for i in range(count)]
+    password_hash = hash_password(BENCH_PASSWORD)
     db = SessionLocal()
     try:
-        db.add(User(username=username, password_hash=hash_password(BENCH_PASSWORD)))
+        db.add_all(User(username=name, password_hash=password_hash) for name in usernames)
         db.commit()
     finally:
         db.close()
-    return username, BENCH_PASSWORD
+    return usernames
 
 
 def _percentile(sorted_values: list[float], q: float) -> float:
@@ -87,12 +89,13 @@ def _one_request(client: httpx.Client, payload: dict, headers: dict) -> tuple[fl
     return (time.perf_counter() - start) * 1000, outcome
 
 
-def run(n: int, concurrency: int, payload: dict, headers: dict, timeout_s: float) -> list[tuple[float, str]]:
+def run(n: int, concurrency: int, payloads: list[dict], headers: dict, timeout_s: float) -> list[tuple[float, str]]:
+    """Request thứ i dùng `payloads[i % len(payloads)]` (xoay vòng tài khoản)."""
     with httpx.Client(timeout=timeout_s) as client:
         if concurrency <= 1:
-            return [_one_request(client, payload, headers) for _ in range(n)]
+            return [_one_request(client, payloads[i % len(payloads)], headers) for i in range(n)]
         with ThreadPoolExecutor(max_workers=concurrency) as pool:
-            return list(pool.map(lambda _: _one_request(client, payload, headers), range(n)))
+            return list(pool.map(lambda i: _one_request(client, payloads[i % len(payloads)], headers), range(n)))
 
 
 def report(results: list[tuple[float, str]], n: int, concurrency: int, username: str, ip: str | None) -> None:
@@ -110,13 +113,18 @@ def report(results: list[tuple[float, str]], n: int, concurrency: int, username:
 
 
 def main(
-    n: int, concurrency: int, show_pipeline: bool, username: str | None, password: str | None, user_agent: str, timeout_s: float, ip: str | None
+    n: int, concurrency: int, show_pipeline: bool, username: str | None, password: str | None, user_agent: str, timeout_s: float, ip: str | None,
+    accounts: int = 1,
 ) -> None:
     if username is None:
-        username, password = create_fresh_account()
-        print(f"(đã tạo tài khoản mới {username} cho lần chạy này)")
+        names = create_fresh_accounts(accounts)
+        payloads = [{"username": name, "password": BENCH_PASSWORD} for name in names]
+        username = names[0] if accounts == 1 else f"{names[0]}…{names[-1]} ({accounts} tài khoản xoay vòng)"
+        print(f"(đã tạo {accounts} tài khoản mới cho lần chạy này: {username})")
+    else:
+        payloads = [{"username": username, "password": password}]
     headers = {"user-agent": user_agent, **({"x-forwarded-for": ip} if ip else {})}
-    report(run(n, concurrency, {"username": username, "password": password}, headers, timeout_s), n, concurrency, username, ip)
+    report(run(n, concurrency, payloads, headers, timeout_s), n, concurrency, username, ip)
 
     if show_pipeline:
         try:
@@ -137,7 +145,13 @@ def main(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--n", type=int, default=50)
+    parser.add_argument("--base-url", default="http://127.0.0.1:8000", dest="base_url", help="địa chỉ backend (MR34: đo trên server tạm ở cổng khác)")
     parser.add_argument("--concurrency", type=int, default=1, help="số request gửi đồng thời (1 = tuần tự, mặc định)")
+    parser.add_argument(
+        "--accounts", type=int, default=1,
+        help="số tài khoản MỚI xoay vòng (MR34: >= 8 lần thành công/10 phút vào MỘT tài khoản khớp luật success_burst — benchmark phải "
+             "chia đều, vd --n 50 --accounts 10)",
+    )
     parser.add_argument("--username", default=None, help="đo tài khoản CÓ SẴN (mặc định: tạo tài khoản mới cho lần chạy này)")
     parser.add_argument("--password", default=None, help="mật khẩu của --username")
     parser.add_argument("--user-agent", default=CHROME_UA, dest="user_agent", help="User-Agent gửi kèm (mặc định: Chrome trên Windows)")
@@ -145,9 +159,10 @@ if __name__ == "__main__":
     parser.add_argument("--ip", default=None, help="IP nguồn giả lập qua X-Forwarded-For (cần TRUST_FORWARDED_FOR=true ở .env)")
     parser.add_argument("--pipeline", action="store_true", dest="show_pipeline", help="in kèm độ trễ pipeline nền (chỉ có ý nghĩa khi import được app.detection.perf của CÙNG tiến trình)")
     args = parser.parse_args()
+    URL = args.base_url.rstrip("/") + "/login"
     if (args.username is None) != (args.password is None):
         parser.error("--username và --password phải đi cùng nhau")
     main(
         n=args.n, concurrency=args.concurrency, show_pipeline=args.show_pipeline, username=args.username, password=args.password,
-        user_agent=args.user_agent, timeout_s=args.timeout_s, ip=args.ip,
+        user_agent=args.user_agent, timeout_s=args.timeout_s, ip=args.ip, accounts=args.accounts,
     )

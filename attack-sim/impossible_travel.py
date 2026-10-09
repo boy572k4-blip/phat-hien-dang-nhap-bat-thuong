@@ -11,10 +11,9 @@ qua header X-Forwarded-For; nếu backend không bật cờ này, IP nguồn th�
 (is_impossible_travel() bỏ qua khi thiếu GeoIP — đây là hành vi đúng, an
 toàn, không phải bug).
 
-2 IP mặc định đã kiểm tra thật cho toạ độ đầy đủ với GeoLite2-City thật
-(và với chế độ mock cũng nhận diện được — 8.8.8.8 nằm sẵn trong
-_MOCK_LOCATIONS ở app/detection/geoip.py):
-  8.8.8.8         -> Mỹ (US)
+2 IP mặc định đã kiểm tra thật cho toạ độ đầy đủ với GeoLite2-City thật:
+  14.161.1.1      -> Việt Nam (TP.HCM) — vị trí quen của tài khoản demo (MR34; trước đó 8.8.8.8 — datacenter Mỹ, tự nó đã bị
+                     bắt xác thực thêm nên kịch bản không tới được bước 2)
   203.119.101.100 -> Úc (Brisbane) — cách xa, đủ vượt ngưỡng 900 km/h
 
 ⚠️ Lưu ý khi tự đổi IP: KHÔNG dùng dải IP dành cho tài liệu/test (VD
@@ -33,9 +32,9 @@ import argparse
 import time
 
 import httpx
-from common import add_common_args
+from common import add_common_args, make_client
 
-IP_A = "8.8.8.8"
+IP_A = "14.161.1.1"  # MR34: nhà mạng ở TP.HCM — vị trí quen của tài khoản demo; 8.8.8.8 (datacenter Mỹ) tự nó đã bị bắt xác thực thêm
 IP_B = "203.119.101.100"
 
 
@@ -57,7 +56,7 @@ def main() -> None:
     args = parser.parse_args()
 
     print(f"[impossible_travel] Đăng nhập '{args.target}' từ {args.ip_a}, rồi ngay sau đó từ {args.ip_b}...")
-    with httpx.Client(timeout=10.0) as client:
+    with make_client(args) as client:  # IP nguồn đặt riêng cho từng lần (--ip-a/--ip-b)
         r1 = _login_with_ip(client, args.base_url, args.target, args.password, args.ip_a)
         print(f"  lần 1 (IP {args.ip_a}): HTTP {r1.status_code}")
         time.sleep(args.delay)

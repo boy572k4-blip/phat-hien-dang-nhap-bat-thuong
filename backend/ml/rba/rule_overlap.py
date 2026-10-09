@@ -23,7 +23,6 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from app.detection.engine import REGISTRY
 from ml.rba import eval_tasks, metrics as M, models
 from ml.rba import rule_tuning as RT
 

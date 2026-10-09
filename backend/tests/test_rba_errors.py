@@ -148,7 +148,6 @@ def test_archetype_priority_is_first_match_and_covers_every_row():
 
 def test_targeted_limits_show_detection_only_when_the_ip_change_is_close_to_the_last_login(world):
     df, hybrid, _, tau_history = world
-    rng = np.random.default_rng(9)
     pool = df[(df["partition"] == "test") & (df["cur_success"] == 1) & (df["u_n_success"] >= 1)].sample(1800, random_state=2).copy()
     pool["row_id"] = 10**9 + np.arange(len(pool))
     pool["attacker_type"] = ["naive", "vpn", "targeted"] * 600

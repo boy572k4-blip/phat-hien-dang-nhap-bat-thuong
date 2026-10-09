@@ -172,7 +172,7 @@ def _latest_blocklist_entry(session_factory):
 
 
 def run_lock_scenario(client: TestClient, session_factory) -> LockScenarioResult:
-    victim_id = _create_user(session_factory, "nan_nhan_that", VICTIM_PASSWORD)
+    _create_user(session_factory, "nan_nhan_that", VICTIM_PASSWORD)
 
     baseline = client.post("/login", json={"username": "nan_nhan_that", "password": VICTIM_PASSWORD}, headers={"user-agent": CHROME_UA, "x-forwarded-for": VICTIM_OWN_IP})
     victim_baseline_login_ok = baseline.status_code == 200
@@ -290,8 +290,8 @@ def render(payload: dict) -> str:
         "",
         "Nạn nhân có tài khoản thật; kẻ tấn công có MẬT KHẨU ĐÚNG (rò rỉ từ nơi khác) nhưng đến từ một ASN đã biết xấu.",
         "",
-        f"| Bước | Kết quả |",
-        f"|---|---|",
+        "| Bước | Kết quả |",
+        "|---|---|",
         f"| 1. Nạn nhân đăng nhập bình thường (trước khi bị tấn công) | {ok(lock['victim_baseline_login_ok'])} thành công |",
         f"| 2. Kẻ tấn công đăng nhập ĐÚNG mật khẩu từ ASN đã bị chặn | HTTP {lock['attacker_login_status']}, `locked={lock['attacker_login_locked_field']}` {ok(lock['attacker_login_status'] == 423)} |",
         f"| 3. Mục khoá mới nhắm vào TÀI KHOẢN (không phải IP kẻ tấn công) | {ok(lock['lock_targeted_username'])} |",
