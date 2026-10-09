@@ -4,7 +4,7 @@ vài test — cơ chế PSI/model_registry đã kiểm kỹ ở nơi khác (ml/r
 
 from datetime import datetime, timezone
 
-from app.models import Admin, ModelRegistryEntry, User
+from app.models import Admin, ModelRegistryEntry
 from app.security import hash_password
 
 ADMIN_PASSWORD = "MatKhauQuanTri123!"

@@ -4,7 +4,6 @@ tự), không bao giờ raise ra ngoài `compute_rba_features`. So khớp từng
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from app.detection.rba_live_features import GlobalCountsCache, build_features_and_summary, build_history_summary, compute_rba_features, event_record_for, to_us
 from app.models import LoginEvent, User

@@ -21,7 +21,6 @@ import pandas as pd
 
 from ml.rba import eval_tasks
 from ml.rba import ensemble as En
-from ml.rba import splits
 from ml.rba.eval_tasks import Task
 from ml.rba.scorers import SCORER_FACTORIES
 

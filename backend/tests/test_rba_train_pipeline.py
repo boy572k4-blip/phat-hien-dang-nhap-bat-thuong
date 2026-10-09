@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ml.rba import ensemble as En
 from ml.rba import eval_tasks, models, splits, train
 from ml.rba.features import FEATURE_NAMES
 from ml.rba.scorers import SCORER_FACTORIES

@@ -18,7 +18,7 @@ Hai nơi TIÊU THỤ CÙNG một `ScenarioSpec` (tách khỏi phần thực thi 
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Sequence
 
 CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

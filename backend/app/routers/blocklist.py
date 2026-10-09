@@ -13,7 +13,7 @@ from app.database import get_db
 from app.dependencies import require_admin
 from app.detection.rule_engine_runtime import invalidate_blocklist_cache
 from app.models import AuditLog, BlocklistEntry
-from app.schemas import BlocklistEntryOut, PaginatedBlocklist
+from app.schemas import PaginatedBlocklist
 
 router = APIRouter()
 

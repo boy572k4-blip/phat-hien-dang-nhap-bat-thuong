@@ -1,7 +1,7 @@
 """MR13 — GET /alerts mặc định sắp theo `priority_score` (novelty × độ tin cậy × importance), không còn luôn mới nhất
 lên đầu; `sort=recent` giữ lại hành vi cũ (MR12 trở về trước). Test xác thực JWT admin có sẵn ở tests/test_admin.py."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from app.models import Admin, Alert, LoginEvent, User
 from app.security import hash_password

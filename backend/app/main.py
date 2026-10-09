@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +12,34 @@ from app.routers import admin, alerts, auth, blocklist, campaigns, events, model
 settings = get_settings()
 logger = logging.getLogger("main")
 
-app = FastAPI(title="Anomaly Login Detection API", version="0.1.0")
+
+def _startup() -> None:
+    """MR12: nạp threat intel + phiên bản mô hình hybrid MỘT LẦN khi tiến trình khởi động (không phải mỗi lần đăng nhập).
+    Lỗi ở đây KHÔNG được chặn ứng dụng khởi động — `load_threat_intel_at_startup`/`ensure_registered` tự nuốt lỗi và ghi
+    log, hybrid risk engine khi đó chạy ở hồ sơ dự phòng (chỉ luật, không có ML) cho tới khi khắc phục và khởi động lại."""
+    from app.detection import hybrid_runtime, model_registry
+    from app.detection.rule_engine_runtime import load_threat_intel_at_startup
+
+    load_threat_intel_at_startup()
+    db = SessionLocal()
+    try:
+        model_registry.ensure_registered(db)
+        hybrid_runtime.load_at_startup(db)
+    except Exception:  # noqa: BLE001 — không được chặn khởi động ứng dụng
+        logger.exception("lỗi khi khởi tạo MR12 (threat intel / hybrid risk engine)")
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """MR33: `lifespan` thay `@app.on_event("startup")` (FastAPI đã ngừng khuyến dùng)."""
+    _startup()
+    yield
+
+
+app = FastAPI(title="Anomaly Login Detection API", version="0.1.0", lifespan=lifespan)
+
 
 # MR32: chỉ đúng nguồn frontend, đúng các phương thức/header API dùng. Không dùng cookie (JWT đi trong header Authorization) nên không
 # bật allow_credentials — trình duyệt không gửi kèm cookie/thông tin đăng nhập nào sang API từ trang khác.
@@ -33,25 +61,6 @@ app.include_router(rules.router)
 app.include_router(model_health.router)
 app.include_router(users.router)
 app.include_router(ws.router)
-
-
-@app.on_event("startup")
-def _startup_mr12() -> None:
-    """MR12: nạp threat intel + phiên bản mô hình hybrid MỘT LẦN khi tiến trình khởi động (không phải mỗi lần đăng nhập).
-    Lỗi ở đây KHÔNG được chặn ứng dụng khởi động — `load_threat_intel_at_startup`/`ensure_registered` tự nuốt lỗi và ghi
-    log, hybrid risk engine khi đó chạy ở hồ sơ dự phòng (chỉ luật, không có ML) cho tới khi khắc phục và khởi động lại."""
-    from app.detection import hybrid_runtime, model_registry
-    from app.detection.rule_engine_runtime import load_threat_intel_at_startup
-
-    load_threat_intel_at_startup()
-    db = SessionLocal()
-    try:
-        model_registry.ensure_registered(db)
-        hybrid_runtime.load_at_startup(db)
-    except Exception:  # noqa: BLE001 — không được chặn khởi động ứng dụng
-        logger.exception("lỗi khi khởi tạo MR12 (threat intel / hybrid risk engine)")
-    finally:
-        db.close()
 
 
 @app.get("/health")

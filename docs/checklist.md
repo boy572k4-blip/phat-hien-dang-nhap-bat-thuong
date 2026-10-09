@@ -635,8 +635,14 @@ lệ khó không vượt mục tiêu báo nhầm. Mỗi hành vi cập nhật v�
     hạn lưu giữ và quy trình xoá — chưa có tác vụ xoá tự động)
   - Kiểm trên trình duyệt với bản sao DB tạm: WebSocket "Real-time", khoá sau 5 lần sai hiện đúng thông báo, khởi động lại backend → tự
     về trang đăng nhập (bắt được và sửa một lỗi của chính bộ chặn 401); script mô phỏng MR16 cho kết quả như cũ (sửa thêm lỗi có từ MR20)
-- [ ] **MR33 [Nên, S] Dọn repo và mã**: xoá `backend/scripts/_soak_test_raw.json` và thêm vào `.gitignore`; FastAPI `lifespan`
-  thay `on_event`; `create_admin.py` không crash khi thiếu `PYTHONIOENCODING`; ruff/format; xoá code chết sau hợp nhất
+- [x] **MR33 [Nên, S] Dọn repo và mã**
+  - [x] `_soak_test_raw.json` (115 KB số liệu thô) ra khỏi git; `scripts/soak_test.py` ghi vào `ml/artifacts/` (đã bỏ qua)
+  - [x] FastAPI `lifespan` thay `@app.on_event("startup")` — hết cảnh báo ngừng hỗ trợ
+  - [x] Console UTF-8 dùng chung (`app/utils/console.py`, gọi từ `scripts/__init__.py`, `ml/__init__.py`): `create_admin.py` và 32
+    script khác in tiếng Việt từng ném `UnicodeEncodeError` khi stdout bị chuyển hướng mà thiếu `PYTHONIOENCODING`
+  - [x] Code chết: quét bằng phân tích cú pháp — 11 import không dùng đã xoá; không còn hàm/module nào của `app/` không được dùng sau
+    hợp nhất (2 hàm chỉ test gọi là móc dọn cache cho test, giữ); 5 script không ai import đều là lệnh chạy tay có trong tài liệu
+  - [ ] ruff/format: chưa làm — ruff chưa cài trong venv (cần tải, chờ đồng ý); định dạng lại toàn bộ sẽ tạo diff rất lớn
 
 ## Giai đoạn K — Nghiệm thu và đóng băng (tuần 5)
 

@@ -35,7 +35,7 @@ WRONG_PASSWORD = "sai_mat_khau_co_y"
 WRONG_RATE = 0.10
 
 REPORT_PATH = Path(__file__).resolve().parents[2] / "docs" / "soak-test.md"
-RAW_PATH = Path(__file__).resolve().parent / "_soak_test_raw.json"
+RAW_PATH = Path(__file__).resolve().parents[1] / "ml" / "artifacts" / "soak_test_raw.json"  # MR33: số liệu thô không vào git (ml/artifacts bị bỏ qua)
 
 
 @dataclass
