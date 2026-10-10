@@ -1,5 +1,7 @@
 # Một sự cố = một cảnh báo, một điểm rủi ro (MR23)
 
+> **Ghi chép theo thời điểm (MR23)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Sau MR21 (một bộ luật) và MR22 (một lớp ML), một lần đăng nhập đã chỉ có **một** điểm và **một** hành động — nhưng dữ liệu
 và giao diện vẫn mang dấu vết của năm cơ chế cũ: hai cột điểm song song trên `login_events`, cột `alert_type` với sáu giá
 trị mà chỉ còn một được tạo, chống trùng lặp theo họ tấn công nên một cuộc tấn công đổi kiểu giữa chừng vẫn ra nhiều cảnh

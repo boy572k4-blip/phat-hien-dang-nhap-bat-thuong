@@ -1,5 +1,7 @@
 # So sánh mô hình trên bộ RBA (MR5–MR6) — bảng đầy đủ
 
+> **Ghi chép theo thời điểm (MR5–MR6)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Sinh bằng `cd backend && venv\Scripts\python.exe -m ml.rba.report all --n-boot 300` ngày 21/09/2026: **13 mô hình × 11 bài**. Mỗi ô là `giá trị [khoảng tin cậy 95%]`.
 > ⚠️ **Cập nhật CP2 (26/09/2026):** bảng này là của 13 mô hình MR6. Bản chốt (`hybrid_cp2` và ba thành phần `_cp2`) được so với bản MR6 trên các bài chính ở [`ml-model-selection.md`](ml-model-selection.md) mục 5; báo cáo đầy đủ của chúng: `python -m ml.rba.report gbm_attack_ip_cp2 gbm_attacker_sim_cp2 isolation_forest_cp2 hybrid_cp2`.
 

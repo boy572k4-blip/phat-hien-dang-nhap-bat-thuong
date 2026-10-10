@@ -1,5 +1,8 @@
 # Hướng dẫn khởi động dự án
 
+> **Chỉ muốn chạy demo?** Một lệnh `demo\start.ps1` làm hết các bước dưới trên DB demo riêng — [`demo-guide.md`](demo-guide.md). Tài liệu này
+> dành cho môi trường phát triển (DB `lad_db`). Kiến trúc hiện hành: [`architecture.md`](architecture.md).
+
 Máy đã cài sẵn mọi thứ (Docker, venv, node_modules). Đây là các bước để
 **chạy lại từ đầu mỗi khi mở máy/mở lại dự án**. Mở 2 cửa sổ terminal
 (PowerShell hoặc Git Bash) — 1 cho backend, 1 cho frontend.
@@ -47,7 +50,7 @@ Mở `http://localhost:5173` trên trình duyệt.
 Web app mẫu ở `http://localhost:5173/login`. Tài khoản có sẵn (do script
 sinh dữ liệu tạo — xem Bước 5):
 
-- Username: `user001` đến `user030` (dữ liệu demo dashboard, Tuần 2-3)
+- Username: `user001` đến `user025` (dữ liệu demo dashboard, Tuần 2-3)
 - Password: `Demo@12345` (giống nhau cho tất cả)
 
 > Riêng `user101`-`user140` là dữ liệu HUẤN LUYỆN ML (Tuần 7, xem Bước 5b)
@@ -76,7 +79,7 @@ ngay lập tức, không cần reload trang.
 
 > Từ giai đoạn mở rộng AI (MR14-17), khu quản trị còn có: **Campaigns** (chiến
 > dịch tấn công gom nhiều tài khoản/alert theo hạ tầng chung), **Rules** (bật/tắt
-> và chỉnh tham số 19 luật rule engine v2 mà không cần sửa code, xem
+> và chỉnh tham số 24 luật mà không cần sửa code, xem
 > [`docs/dashboard-v2.md`](dashboard-v2.md)), **Model Health** (trôi PSI của chính
 > hệ thống: cửa sổ đầu so với gần nhất; khoảng cách so với dữ liệu train RBA và độ lệch
 > miền — MR26), và trang hồ sơ rủi ro theo từng user.
@@ -90,11 +93,10 @@ cần chạy lại** trừ khi bạn muốn.
 ```bash
 cd D:\github\phat-hien-dang-nhap-bat-thuong\backend
 venv\Scripts\activate
-set PYTHONIOENCODING=utf-8
 python -m scripts.generate_labeled_anomalies --reset
 ```
 
-## Bước 5b — (Tuỳ chọn) Chạy lại pipeline ML tầng 3
+## Bước 5b — (Tuỳ chọn) Huấn luyện lại mô hình địa lý–thời gian (`ml_geo`, trước MR22 gọi là "tầng 3")
 
 Model đã train sẵn và có trong git (`backend/ml/artifacts/isolation_forest.joblib`, `scaler.joblib`, `meta.json` — từ
 10/10/2026). Chỉ chạy lại 3 lệnh dưới khi muốn huấn luyện lại; nếu thiếu tệp, hệ thống tự tắt mô hình này một cách an toàn,
@@ -103,7 +105,6 @@ không lỗi:
 ```bash
 cd D:\github\phat-hien-dang-nhap-bat-thuong\backend
 venv\Scripts\activate
-set PYTHONIOENCODING=utf-8
 python -m ml.generate_dataset --reset    # 40 user + 5 kiểu bất thường (nếu chưa có)
 python -m ml.extract_features             # trích đặc trưng
 python -m ml.train                        # huấn luyện 3 mô hình -> backend/ml/artifacts/
@@ -120,9 +121,8 @@ ký đặc trưng không khớp):
 ```bash
 cd D:\github\phat-hien-dang-nhap-bat-thuong\backend
 venv\Scripts\activate
-set PYTHONIOENCODING=utf-8
 python -m ml.check_env                # kiểm tra tìm thấy rba-dataset.zip chưa (xem docs/rba-data-card.md mục 7)
-python -m ml.rba.selection all        # ~15-20 phút — chọn đặc trưng + huấn luyện hybrid_cp2 -> ml/artifacts/rba_cp2/
+python -m ml.rba.selection all        # ~15-20 phút — chọn đặc trưng + huấn luyện hybrid_cp2 -> ml/artifacts/rba/hybrid_cp2.joblib
 ```
 
 ⚠️ **Nếu thiếu artifact, hệ thống KHÔNG lỗi** — `hybrid_runtime.py` tự rơi về hồ sơ dự phòng (chỉ luật + danh tiếng,
@@ -137,15 +137,13 @@ terminal khác:
 
 ```bash
 cd D:\github\phat-hien-dang-nhap-bat-thuong\attack-sim
-set PYTHONIOENCODING=utf-8
-"..\backend\venv\Scripts\python.exe" brute_force.py --target user001
-"..\backend\venv\Scripts\python.exe" credential_stuffing.py
-"..\backend\venv\Scripts\python.exe" success_after_fail.py --target user001 --correct-password Demo@12345
+"..\backend\venv\Scripts\python.exe" demo_all.py                    # 7 kịch bản, Enter để sang kịch bản tiếp
+"..\backend\venv\Scripts\python.exe" brute_force.py --target user011  # hoặc từng script riêng — attack-sim/README.md
 ```
 
-`impossible_travel.py` cần thêm `TRUST_FORWARDED_FOR=true` trong `.env`
-(mặc định tắt — chỉ bật khi demo cục bộ, xem cảnh báo trong
-`backend/app/config.py`) rồi khởi động lại backend.
+Các script giả lập IP kẻ tấn công qua `X-Forwarded-For` nên cần `TRUST_FORWARDED_FOR=true` trong `.env` (mặc định tắt — chỉ bật khi
+demo cục bộ; header chỉ được tin khi gửi từ chính máy chạy backend) rồi khởi động lại backend. Không bật thì mọi kịch bản đến từ
+127.0.0.1 — khoá tự động theo IP sẽ khoá luôn chính máy của bạn.
 
 ## Bước 6b — (Tuỳ chọn) Thư viện kịch bản tấn công mô phỏng v2 (MR18)
 
@@ -156,7 +154,6 @@ tính điểm phát hiện theo từng tầng và xuất báo cáo:
 ```bash
 cd D:\github\phat-hien-dang-nhap-bat-thuong\backend
 venv\Scripts\activate
-set PYTHONIOENCODING=utf-8
 python -m scripts.attack_scenario_runner   # ghi lại docs/attack-scenarios-v2.md
 ```
 
@@ -180,8 +177,9 @@ liệu ngẫu nhiên không hạt giống cố định nên số liệu có th�
 |---|---|---|
 | `uvicorn` báo lỗi bind port 8000 | Còn tiến trình cũ chưa tắt | Đóng terminal cũ đang chạy uvicorn, hoặc `netstat -ano \| findstr :8000` rồi `taskkill /F /PID <pid>` |
 | Vite báo "Port 5173 is in use" | Tương tự, tiến trình cũ | Đóng terminal cũ hoặc kill theo PID như trên |
-| Chữ tiếng Việt lỗi (`UnicodeEncodeError`) khi chạy script Python | Console Windows dùng codepage cp1252 | Chạy `set PYTHONIOENCODING=utf-8` trước khi gọi script |
+| Chữ tiếng Việt lỗi (`UnicodeEncodeError`) khi chạy script Python | Console Windows dùng codepage cp1252 | Từ MR33 các lệnh `python -m scripts.…` / `python -m ml.…` và `attack-sim/` tự đặt UTF-8; script khác: `set PYTHONIOENCODING=utf-8` |
 | `docker compose up` báo lỗi kết nối tới Docker | Docker Desktop chưa khởi động xong | Mở Docker Desktop, đợi rồi thử lại |
+| Docker Desktop không bao giờ lên, log có "The file cannot be accessed by the system" | File socket cũ sau lần tắt máy đột ngột | Quit Docker Desktop rồi chạy `demo\start.ps1` (tự dời `%LOCALAPPDATA%\Docker\run` và `%LOCALAPPDATA%\docker-secrets-engine` khi Docker đang tắt) |
 | Frontend gọi API bị lỗi CORS | Backend chưa chạy, hoặc chạy sai port | Đảm bảo backend chạy ở port 8000 (khớp `VITE_API_BASE_URL` trong `.env`) |
 
 ## Chạy test

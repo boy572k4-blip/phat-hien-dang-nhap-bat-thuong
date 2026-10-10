@@ -1,5 +1,7 @@
 # Vòng phản hồi (MR15)
 
+> **Ghi chép theo thời điểm (MR15)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Mô phỏng **8 vòng** liên tiếp trên CHÍNH pipeline thật (rule engine + hybrid risk engine, model `hybrid_cp2` thật) — mã nguồn: [`backend/scripts/feedback_loop_sim.py`](../backend/scripts/feedback_loop_sim.py). Cơ chế (ngưỡng thích nghi, retrain định kỳ): [`app/detection/adaptive_threshold.py`](../backend/app/detection/adaptive_threshold.py), [`scripts/retrain_from_feedback.py`](../backend/scripts/retrain_from_feedback.py).
 
 ## Kết quả chính

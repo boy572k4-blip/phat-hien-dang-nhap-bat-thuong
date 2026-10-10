@@ -1,5 +1,7 @@
 # MR29 — Luật kết hợp: đo bốn tổ hợp, giữ một
 
+> **Ghi chép theo thời điểm (MR29)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Mã: luật `anonymizer_new_device` trong [`rules_reputation.py`](../backend/app/detection/engine/rules_reputation.py), kho IP `datacenter_vn`
 trong [`ml/corpus/ip_pools.py`](../backend/ml/corpus/ip_pools.py), họ dữ liệu trong [`ml/corpus/families.py`](../backend/ml/corpus/families.py),
 trần trọng số `CONTEXT_ONLY` trong [`ml/corpus/calibrate_rules.py`](../backend/ml/corpus/calibrate_rules.py) · test: `test_rule_engine_rules.py`,

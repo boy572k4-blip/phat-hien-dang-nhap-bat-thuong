@@ -1,5 +1,7 @@
 # Khung đánh giá trên bộ RBA (MR4)
 
+> **Ghi chép theo thời điểm (MR4)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Một lệnh sinh bảng kết quả chuẩn cho **mọi** mô hình hoặc luật chấm điểm, để so sánh công bằng ở MR5–MR7:
 
 ```bash

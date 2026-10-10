@@ -20,14 +20,14 @@ Tick `[x]` khi nhiệm vụ đã qua đủ các mục kiểm tra — không tick
 
 - [x] 3.1 Tích hợp MaxMind GeoLite2 — A — [`backend/app/detection/geoip.py`](../backend/app/detection/geoip.py), dùng dữ liệu GeoLite2-City thật (xem [`docs/geoip-setup.md`](geoip-setup.md))
 - [x] 3.2 Đếm login fail bằng Redis (sliding window) — A — [`backend/app/detection/rate_counter.py`](../backend/app/detection/rate_counter.py)
-- [x] 3.3 Viết rule-based detection tầng 1 — A — [`backend/app/detection/rules.py`](../backend/app/detection/rules.py)
+- [x] 3.3 Viết rule-based detection tầng 1 — A — `backend/app/detection/rules.py` (đã gộp vào rule engine và xoá ở MR21)
 - [x] 3.4 Dựng khung dashboard 4 khu vực — B — [`frontend/src/pages/DashboardPage.jsx`](../frontend/src/pages/DashboardPage.jsx)
 - [x] 3.5 Mở rộng dữ liệu lịch sử giả lập cho baseline — B — [`backend/scripts/generate_labeled_anomalies.py`](../backend/scripts/generate_labeled_anomalies.py)
 
 ## Tuần 4 — Behavioral scoring tầng 2
 
 - [x] 4.1 Xây baseline hành vi user — A — [`backend/app/detection/baseline.py`](../backend/app/detection/baseline.py)
-- [x] 4.2 Cài đặt chấm điểm risk score tầng 2 — A — [`backend/app/detection/scoring.py`](../backend/app/detection/scoring.py)
+- [x] 4.2 Cài đặt chấm điểm risk score tầng 2 — A — `backend/app/detection/scoring.py` (đã xoá ở MR21)
 - [x] 4.3 Bảng log & biểu đồ tĩnh trên dashboard — B — `GET /login-events`, `GET /alerts` + [`frontend/src/components/LogTablePanel.jsx`](../frontend/src/components/LogTablePanel.jsx), [`RiskChartPanel.jsx`](../frontend/src/components/RiskChartPanel.jsx)
 
 ## Tuần 5 — Bảo mật & real-time
@@ -657,14 +657,23 @@ lệ khó không vượt mục tiêu báo nhầm. Mỗi hành vi cập nhật v�
   - [x] Sửa 2 lỗi chặn demo: gõ sai mật khẩu ở web app đăng xuất quản trị viên (lỗi của MR32; frontend gắn token quản trị vào cả
     `/login`); script tấn công khoá IP máy người trình bày (nay giả lập IP kẻ tấn công, User-Agent trình duyệt). Thêm: ngưỡng/IP của
     2 script, benchmark xoay vòng tài khoản (`--accounts`), soak 25 tài khoản + đo bộ nhớ
-- [ ] **MR35 [Lõi, M] Đồng bộ tài liệu với kiến trúc mới**: README, sơ đồ kiến trúc, api-contract, db-schema, getting-started,
-  model card, ma trận phủ hành vi, hướng dẫn tái lập; tài liệu cũ đánh dấu "lịch sử"
+- [x] **MR35 [Lõi, M] Đồng bộ tài liệu với kiến trúc mới** — mục lục: [`README.md`](README.md)
+  - [x] Tài liệu trung tâm mới [`architecture.md`](architecture.md): sơ đồ thành phần + luồng một lần đăng nhập (Mermaid), hai mô hình,
+    công thức gộp điểm, hành động tối thiểu, ai gánh hành vi nào, số đo, giới hạn. Đính chính: `hybrid_cp2` **không có trần** — một
+    mình đủ OTP/khoá khi xác suất ≥ 0,58/0,70 (chỉ `ml_geo` bị chặn 0,382, tối đa cảnh báo)
+  - [x] README viết lại theo kiến trúc hiện tại (nhật ký Tuần 1–8 / MR1–19 chuyển nguyên văn sang [`history.md`](history.md))
+  - [x] `api-contract.md` (18 endpoint) và `db-schema.md` (15 bảng) đối chiếu tự động với mã — khớp
+  - [x] `getting-started.md` (tài khoản `user001–025`, bỏ `PYTHONIOENCODING`, tấn công một lệnh, sự cố Docker), `model-card-rba.md`
+    (cách dùng hiện tại, tệp mô hình trong git), ma trận phủ hành vi (bảng hiện hành sinh từ số đo MR29), `reproduction-guide.md`
+    (thêm bộ kịch bản/hiệu chỉnh, LANL, nghiệm thu; sửa đường dẫn tệp `hybrid_cp2`)
+  - [x] 32 báo cáo theo MR gắn dòng "ghi chép theo thời điểm"; mục lục tách hiện hành / lịch sử; mọi link nội bộ trỏ tới tệp có thật
 - [x] **MR36 [Lõi, S] Demo chắc chắn** — hướng dẫn: [`demo-guide.md`](demo-guide.md)
   - [x] Khởi động một lệnh `demo\start.ps1`: bật Docker Desktop nếu tắt (dời file socket cũ gây lỗi khởi động — sự cố 09/10), Postgres +
     Redis, dựng DB demo nếu chưa có, kiểm tra 15 điều kiện (kể cả mô hình nạp được thật), backend + frontend thành 2 cửa sổ, mở trình
     duyệt; `demo\stop.ps1` chỉ dừng đúng tiến trình đã ghi; khoá JWT riêng của máy demo (đăng nhập không mất khi khởi động lại)
   - [x] Dữ liệu demo trên DB riêng `lad_demo` + Redis db 3 (từ chối mọi DB không kết thúc `_demo` — `lad_db` không bao giờ bị đụng);
-    `demoeset.ps1` dựng lại trong ~10 giây: 25 tài khoản, lịch sử 60 ngày kết thúc HÔM QUA, seed cố định (`backend/scripts/demo.py`)
+    `demo
+eset.ps1` dựng lại trong ~10 giây: 25 tài khoản, lịch sử 60 ngày kết thúc HÔM QUA, seed cố định (`backend/scripts/demo.py`)
   - [x] Tài khoản demo cố định: `admin_demo` / `Admin@Demo2026`, `user001`–`user025` / `Demo@12345`
   - [x] Tấn công một lệnh `attack-sim/demo_all.py`: 7 kịch bản (dò mật khẩu, dò tài khoản, trúng mật khẩu sau chuỗi sai, di chuyển bất
     khả thi, Tor, script tự động, datacenter + thiết bị lạ), mỗi kịch bản một tài khoản + một IP giả riêng, có lời dẫn — chạy thật: 7/7

@@ -1,5 +1,7 @@
 # MR25 — Hiệu chỉnh lại trọng số luật và mức hành động tối thiểu
 
+> **Ghi chép theo thời điểm (MR25)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Mã: [`backend/ml/corpus/calibrate_rules.py`](../backend/ml/corpus/calibrate_rules.py) · hồ sơ đang dùng:
 [`rba_calibrated.json`](../backend/app/detection/hybrid/profiles/rba_calibrated.json) · test:
 [`test_rule_recalibration.py`](../backend/tests/test_rule_recalibration.py) · dữ liệu: bộ MR24 ([`calibration-corpus.md`](calibration-corpus.md),

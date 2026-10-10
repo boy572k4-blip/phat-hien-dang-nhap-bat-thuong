@@ -1,4 +1,55 @@
-# Ma trận phủ hành vi (MR19)
+# Ma trận phủ hành vi
+
+## Bảng hiện hành (đo sau MR29 — cập nhật tài liệu ở MR35)
+
+Đo trên bộ kịch bản có nhãn **39 họ** do nhóm tự dựng ([`calibration-corpus.md`](calibration-corpus.md); tập đánh giá, cổng `setup`), chạy
+qua đúng pipeline của hệ thống. **"Vững"** = tín hiệu riêng của hành vi bắt ≥ 50% biến thể VÀ chính tín hiệu đó báo nhầm ≤ 1% trên 3.846
+lần đăng nhập hợp lệ (gồm ca khó: VPN, đổi máy, quên mật khẩu, NAT văn phòng, phòng máy đào tạo...). Số lấy thẳng từ
+`backend/ml/artifacts/corpus/mr29/behaviors_report.json` (`python -m ml.corpus.behaviors`).
+
+| Hành vi | Tín hiệu riêng | Bắt nhờ tín hiệu riêng | Bắt (mọi nguồn) | Báo nhầm của tín hiệu riêng | Vững |
+|---|---|---|---|---|---|
+| Dò mật khẩu một tài khoản | `brute_force` | 100,0% | 100,0% | 0,7% | ✓ |
+| Nhồi thông tin đăng nhập | `credential_stuffing` | 100,0% | 100,0% | 0,0% | ✓ |
+| Rải mật khẩu chậm | `password_spray_slow` | 100,0% | 100,0% | 0,0% | ✓ |
+| Botnet phân tán (IP nước ngoài/ẩn danh) | `distributed_bruteforce` | 86,7% | 100,0% | 0,0% | ✓ |
+| Botnet phân tán cùng khu vực (IP Việt Nam) | `distributed_bruteforce` | 83,3% | 100,0% | 0,0% | ✓ |
+| Dò danh sách tài khoản | `username_enumeration` | 100,0% | 100,0% | 0,0% | ✓ |
+| Thành công sau chuỗi sai | `success_after_failures` | 100,0% | 100,0% | 0,5% | ✓ |
+| Xoay User-Agent | `ua_rotation` | 100,0% | 100,0% | 0,0% | ✓ |
+| Nhịp thử đều như máy | `regular_rhythm` | 66,7% | 100,0% | 0,0% | ✓ |
+| Bot / client kịch bản | `bot_user_agent`, `scripted_client` | 100,0% | 100,0% | 0,0% | ✓ |
+| Thử từ nhiều quốc gia | `country_hop` | 100,0% | 100,0% | 0,0% | ✓ |
+| Đăng nhập qua Tor | `tor_exit` | 100,0% | 100,0% | 0,0% | ✓ |
+| Đăng nhập qua VPN/datacenter (một mình cố ý không cảnh báo, MR25) | `vpn_ip`, `datacenter_ip` | 0,0% | 100,0% | 0,0% | ✗ |
+| Đăng nhập qua VPN/datacenter bằng thiết bị lạ (MR29) | `anonymizer_new_device` | 82,6% | 100,0% | 0,8% | ✓ |
+| Chiếm tài khoản qua VPS trong nước (MR29) | `anonymizer_new_device` | 96,7% | 100,0% | 0,8% | ✓ |
+| Di chuyển bất khả thi | `impossible_travel` | 93,3% | 100,0% | 0,0% | ✓ |
+| Đăng nhập thành công dồn dập | `success_burst` | 80,0% | 100,0% | 0,0% | ✓ |
+| Đoán mã OTP liên tục | `otp_guessing` | 83,3% | 100,0% | 0,0% | ✓ |
+| Cố đăng nhập khi đang bị khoá | `blocked_retry` | 83,3% | 100,0% | 0,0% | ✓ |
+| Một IP đăng nhập thành công vào nhiều tài khoản | `multi_account_success` | 0,0% | 100,0% | 0,0% | ✗ |
+| Tài khoản ngủ đông | `dormant_account_login`, `ml_geo` | 36,7% | 36,7% | — (nguồn ML) | ✗ |
+| Proxy cùng nước, nhà mạng lạ | `rare_network_login`, `ml_geo` | 83,3% | 83,3% | — (nguồn ML) | ✗ |
+| Mô phỏng tinh vi (mơ hồ có chủ đích) | `ml`, `ml_geo` | 100,0% | 100,0% | — (nguồn ML) | ✗ |
+
+- **18/23 vững; 21/23 bị bắt khi cộng mọi nguồn.** Hai dòng "0% tín hiệu riêng" là **cố ý** chỉ làm bằng chứng (VPN một mình; một IP vào
+  nhiều tài khoản — phòng máy đào tạo trông giống hệt). Ba dòng cuối chỉ mô hình học máy gánh; điểm yếu nhất là **tài khoản ngủ đông
+  (36,7%)**.
+- Cả hệ thống trên lưu lượng hợp lệ: **27,1%** lần thử bị cảnh báo (chỉ quản trị viên thấy), **1,35%** bị đòi OTP hoặc khoá.
+- Không phải tấn công thật ngoài đời. Bằng chứng trên tấn công thật: log LANL ([`lanl-validation.md`](lanl-validation.md)).
+- Các hành vi còn lại của ma trận (giờ lạ, vị trí lạ, thiết bị lạ, chiếm tài khoản trên RBA...) được đo bằng dữ liệu khác — bảng gốc MR19
+  và các mục cập nhật bên dưới (tổng 31 hành vi: vững 25, phụ thuộc hoàn cảnh 3, cố ý không cảnh báo 2, mơ hồ có chủ đích 1).
+- Hành vi nào do luật, hành vi nào do mô hình gánh và vì sao: [`architecture.md`](architecture.md) mục 4.
+
+---
+
+## Bảng gốc (MR19) và các lần cập nhật — lịch sử
+
+> Phần dưới đây là bản MR19 và các mục "Cập nhật sau MR…" theo thời điểm. Các cột "tầng 1 / tầng 2 / tầng 3" đã hợp nhất thành một
+> bộ luật + hai mô hình từ MR21–MR22; số trong bảng gốc là số đo lúc đó.
+
+### Bảng gốc (MR19)
 
 Tổng hợp **toàn bộ** hành vi tấn công mà hệ thống có cơ chế nhận diện — từ tầng 1 gốc (Tuần 3), luật tầng 2 (rule
 engine v2, MR9), tới hành vi bất thường tầng 3 (ML, Tuần 7 + MR18) — cùng bằng chứng ĐO ĐƯỢC THẬT (không phải suy

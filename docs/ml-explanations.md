@@ -1,5 +1,7 @@
 # Giải thích cảnh báo (MR8)
 
+> **Ghi chép theo thời điểm (MR8)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Mã: [`explain.py`](../backend/ml/rba/explain.py) (SHAP, z-score, gộp yếu tố, viết câu, ngữ cảnh) · [`explain_eval.py`](../backend/ml/rba/explain_eval.py) (đo độ trung thực, bảng toàn cục, ví dụ, ngưỡng vận hành, độ trễ). Kiểm thử: `tests/test_rba_explain.py` (21), `tests/test_rba_explain_eval.py` (13), `tests/test_rba_audit.py` (thêm 2). Số liệu chạy trên giai đoạn **test** của bộ RBA tổng hợp ([`rba-data-card.md`](rba-data-card.md)); **mục 1–8 chạy trên hybrid MR6** (`python -m ml.rba.explain_eval all --hybrid hybrid`); sau khi chốt mô hình ở CP2 ([`ml-model-selection.md`](ml-model-selection.md)) các phép đo chính được lặp lại trên **`hybrid_cp2`** ở mục 9 (kết luận không đổi). Model card: [`model-card-rba.md`](model-card-rba.md).
 
 ## Tóm tắt

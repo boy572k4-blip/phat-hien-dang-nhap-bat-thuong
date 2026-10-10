@@ -1,5 +1,7 @@
 # MR26 — Hiệu chỉnh `hybrid_cp2` cho người dùng Việt Nam + sức khoẻ mô hình đọc được
 
+> **Ghi chép theo thời điểm (MR26)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Mã: [`ml/corpus/calibrate_ml.py`](../backend/ml/corpus/calibrate_ml.py) (độ lệch miền), `MlDomainShift` trong
 [`hybrid/calibration.py`](../backend/app/detection/hybrid/calibration.py), [`ml/rba/drift.py`](../backend/ml/rba/drift.py) +
 [`routers/model_health.py`](../backend/app/routers/model_health.py) (sức khoẻ) · test:

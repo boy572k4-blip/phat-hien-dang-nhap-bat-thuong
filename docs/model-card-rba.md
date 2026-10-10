@@ -1,14 +1,21 @@
 # Model card — chấm điểm rủi ro đăng nhập trên bộ RBA (MR6, hoàn thiện ở MR8, mô hình chốt ở CP2/MR8b)
 
+> **Cách dùng hiện tại (cập nhật MR35, 10/10/2026)** — mô hình này là một trong các nguồn bằng chứng của điểm gộp:
+> (1) điểm thô trừ **độ lệch miền** Δ = 1,78 cho lần đăng nhập thành công (người dùng Việt Nam khác RBA, MR26 —
+> [`vn-recalibration.md`](vn-recalibration.md)) rồi đổi ra xác suất bằng hiệu chỉnh đơn điệu trên RBA; (2) gộp MAX với mô hình địa lý–thời
+> gian, rồi noisy-OR với luật và danh tiếng hạ tầng; (3) **không có trần**: xác suất ≥ 0,58 / ≥ 0,70 tự đủ xác thực thêm / khoá tạm (khoá
+> luôn có hạn, quản trị viên mở được). Trên bộ kịch bản 39 họ, riêng mô hình này làm 0,15% lần đăng nhập hợp lệ bị cảnh báo. Toàn cảnh:
+> [`architecture.md`](architecture.md). Các mục dưới đây là thẻ mô hình lúc chốt (MR6–MR8b) — số đo trên RBA vẫn đúng cho mô hình này.
+
 Mã: [`backend/ml/rba/`](../backend/ml/rba/) · kết quả đầy đủ và phân tích: [`ml-evaluation-v2.md`](ml-evaluation-v2.md) · kiểm chứng "kiểu tấn công mới", ablation, phân tích lỗi: [`ml-holdout-ablation.md`](ml-holdout-ablation.md) · giải thích cảnh báo và ngưỡng vận hành: [`ml-explanations.md`](ml-explanations.md) · **chọn đặc trưng và chốt mô hình ở CP2: [`ml-model-selection.md`](ml-model-selection.md)** · khung đo: [`rba-evaluation.md`](rba-evaluation.md).
 
 | | |
 |---|---|
 | Phiên bản đặc trưng | `v2`: 50 đặc trưng ([`rba-features.md`](rba-features.md)), chữ ký danh sách `2e54756a441c` (`feature_signature()`; bảng "thường thấy" của giải thích từ chối nạp nếu chữ ký lệch) |
-| Mô hình vận hành | **`hybrid_cp2`** (chốt ở CP2: `python -m ml.rba.selection`): `gbm_attack_ip` (MR6, 50 đặc trưng) + `gbm_attacker_sim_cp2` (28 đặc trưng quan hệ với lịch sử) + `isolation_forest_cp2` (43 đặc trưng, bỏ `infra_ip`). Bản MR6 (`hybrid`) giữ để so trước/sau. Artifact ở `backend/ml/artifacts/rba/` (không commit, sinh lại được); hạt giống cố định |
+| Mô hình vận hành | **`hybrid_cp2`** (chốt ở CP2: `python -m ml.rba.selection`): `gbm_attack_ip` (MR6, 50 đặc trưng) + `gbm_attacker_sim_cp2` (28 đặc trưng quan hệ với lịch sử) + `isolation_forest_cp2` (43 đặc trưng, bỏ `infra_ip`). Bản MR6 (`hybrid`) giữ để so trước/sau. Artifact `backend/ml/artifacts/rba/hybrid_cp2.joblib` có trong git từ 10/10/2026 (các mô hình so sánh khác vẫn không commit, sinh lại được); hạt giống cố định |
 | Ngưỡng vận hành | `hybrid_cp2` **2,391** (báo nhầm 1%) và **3,345** (0,1%), chọn chỉ trên đăng nhập hợp lệ thành công của val (mục 6); bản MR6: 2,410 và 3,365 |
 | Giải thích | SHAP cho LightGBM, z-score cho bộ không giám sát, câu tiếng Việt kèm "thường … → nay …" (mục 7) |
-| Trạng thái | **đang chạy live trên `/login`** (nối từ MR12, [`realtime-integration.md`](realtime-integration.md)): `hybrid_cp2` nạp qua `model_registry`, 50 đặc trưng tính trực tiếp từ DB (`rba_live_features.py`, cùng đặc tả `ml/rba/features.py`); lỗi nạp ở bất kỳ bước nào (thiếu registry, sai `feature_signature`...) rơi về hồ sơ dự phòng chỉ-luật, không tắt hẳn phát hiện. Tầng 3 cũ (Isolation Forest 9 đặc trưng, dữ liệu tự sinh) vẫn chạy song song, không thay thế — xem [`behavior-coverage-matrix.md`](behavior-coverage-matrix.md) |
+| Trạng thái | **đang chạy live trên `/login`** (nối từ MR12, [`realtime-integration.md`](realtime-integration.md)): `hybrid_cp2` nạp qua `model_registry`, 50 đặc trưng tính trực tiếp từ DB (`rba_live_features.py`, cùng đặc tả `ml/rba/features.py`); lỗi nạp ở bất kỳ bước nào (thiếu registry, sai `feature_signature`...) rơi về hồ sơ dự phòng chỉ-luật, không tắt hẳn phát hiện. Từ MR22 mô hình địa lý–thời gian (Isolation Forest 9 đặc trưng, dữ liệu tự sinh) là nguồn bằng chứng thứ hai `ml_geo`, gộp với mô hình này bằng MAX — [`architecture.md`](architecture.md) mục 3–4 |
 
 ## 1. Dùng để làm gì — và không dùng để làm gì
 

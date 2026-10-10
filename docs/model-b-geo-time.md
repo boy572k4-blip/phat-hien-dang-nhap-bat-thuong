@@ -1,5 +1,7 @@
 # Mô hình B (địa lý-thời gian) — dữ liệu từ thư viện tấn công mô phỏng v2 (MR18)
 
+> **Ghi chép theo thời điểm (MR18)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 > Từ MR22 mô hình này là nguồn bằng chứng `ml_geo` của hybrid risk engine (không còn alert `ml_anomaly` riêng), có cổng
 > cold-start, và dữ liệu sinh với seed cố định — xem [`geo-model-integration.md`](geo-model-integration.md).
 

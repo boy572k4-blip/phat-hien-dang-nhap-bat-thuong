@@ -1,5 +1,7 @@
 # Đo & tối ưu tốc độ POST /login (nhiệm vụ 5.2)
 
+> **Ghi chép theo thời điểm (Tuần 5–MR23; số mới nhất ở acceptance-mr34.md)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 > ⚠️ **Cập nhật MR19 (28/09/2026):** số ở mục "Phương pháp/Kết quả" gốc bên dưới là của **Tuần 5** (chỉ tầng 1-2, chưa
 > có rule engine v2/hybrid ML/MR16). Số hiện tại — **chậm hơn đáng kể** — và phân tích nguyên nhân ở mục
 > "Đo lại sau MR9-18" cuối tài liệu.

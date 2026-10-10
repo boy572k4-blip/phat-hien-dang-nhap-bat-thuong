@@ -1,5 +1,7 @@
 # MR28 — Mở rộng hành vi, đợt 2: đoán mã OTP, cố thử khi đang bị khoá, một IP vào nhiều tài khoản
 
+> **Ghi chép theo thời điểm (MR28)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Mã: [`app/detection/gate.py`](../backend/app/detection/gate.py) (cửa của `/login` và `/login/verify-otp`), ba luật cuối
 [`rules_auth.py`](../backend/app/detection/engine/rules_auth.py), chỉ mục mới trong [`indexes.py`](../backend/app/detection/engine/indexes.py),
 router [`auth.py`](../backend/app/routers/auth.py), bộ chạy [`ml/corpus/run.py`](../backend/ml/corpus/run.py) (cửa `/login`, bước OTP,

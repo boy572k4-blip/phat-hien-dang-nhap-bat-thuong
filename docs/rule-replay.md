@@ -1,5 +1,7 @@
 # Replay rule engine v2 trên RBA
 
+> **Ghi chép theo thời điểm (MR9)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 > Báo cáo TỰ SINH, đừng sửa tay. Sinh lại: `python -m app.detection.engine.replay rba --start 2020-02-03 --end 2020-08-01 --out <tệp.md>`
 
 ## 1. Dữ liệu và cách chạy

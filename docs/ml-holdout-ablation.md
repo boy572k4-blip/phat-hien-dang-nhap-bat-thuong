@@ -1,5 +1,7 @@
 # Kiểm chứng "kiểu tấn công mới", ablation và phân tích lỗi (MR7)
 
+> **Ghi chép theo thời điểm (MR7)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Trả lời ba câu hỏi bằng thí nghiệm, không bằng lập luận: (1) mô hình có bắt được kiểu tấn công **chưa từng thấy** không? (2) sức mạnh của nó có đến từ một **đường tắt** không? (3) nó **sai ở đâu**? Khung đo và cách đọc: [`rba-evaluation.md`](rba-evaluation.md); mô hình: [`model-card-rba.md`](model-card-rba.md); kết quả MR6: [`ml-evaluation-v2.md`](ml-evaluation-v2.md). Dữ liệu là **tổng hợp** ([`rba-data-card.md`](rba-data-card.md)). Mọi số ở **FPR 1%** (chỉ báo nhầm 1% đăng nhập hợp lệ), giai đoạn test, trọng số dân số, trừ khi ghi khác.
 
 > ⚠️ **Cập nhật CP2 (26/09/2026):** thí nghiệm ở tài liệu này chạy trên các mô hình MR6 (50 đặc trưng). Đề xuất của mục 4.3 (Isolation Forest bỏ nhóm `infra_ip`) đã được chốt ở CP2 nhưng chọn lại trên 92 ATO quá khứ thay vì 38 ca tương lai ([`ml-model-selection.md`](ml-model-selection.md)); đề xuất bỏ `infra_ip` khỏi `gbm_attack_ip` **không** được chọn theo val (val cho `infra_asn`) và cũng bị phủ quyết theo `late`. Các số hold-out, ablation và phân tích lỗi giữ nguyên là của bản MR6.

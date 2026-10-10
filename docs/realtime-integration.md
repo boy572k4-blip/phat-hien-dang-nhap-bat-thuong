@@ -1,5 +1,7 @@
 # Tích hợp realtime — MR12 (CP3)
 
+> **Ghi chép theo thời điểm (MR12)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Nối rule engine v2 (MR9-10) và hybrid risk engine (MR11) vào luồng `/login` thật, thay vì chỉ chạy trên RBA ngoại
 tuyến. Migration schema: [`db-schema.md`](db-schema.md). Không tự sinh từ script như MR9-11 (không có một "lượt chạy
 ngoại tuyến" duy nhất để đo) — tài liệu này viết tay, số liệu dẫn nguồn cụ thể để tự kiểm lại được.

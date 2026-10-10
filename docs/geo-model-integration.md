@@ -1,5 +1,7 @@
 # Một lớp ML: mô hình địa lý-thời gian thành nguồn bằng chứng của hybrid (MR22)
 
+> **Ghi chép theo thời điểm (MR22)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 > **Cập nhật MR23** ([`incident-unification.md`](incident-unification.md) mục 5): (1) trên luồng thật, đặc trưng
 > `minutes_since_last_login` của mọi lần đăng nhập thành công là 0 từ Tuần 7 (truy vấn thấy chính lần thử vừa ghi) — đã sửa,
 > có test so khớp với đặc trưng lúc train; số đo trên tập test ở dưới là offline nên không bị ảnh hưởng. (2) Tên họ tấn công

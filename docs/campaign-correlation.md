@@ -1,5 +1,7 @@
 # Tương quan chiến dịch (MR14)
 
+> **Ghi chép theo thời điểm (MR14)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Kiểm chứng thuật toán nối-theo-đồ-thị (`app/detection/campaign_correlation.py`) trên **141 ATO THẬT** của RBA (không phải kẻ tấn công mô phỏng — vẫn là dữ liệu tổng hợp theo Wiefling et al., xem project_rba_dataset.md). Mã nguồn báo cáo: [`ml/rba/campaign_correlation_eval.py`](../backend/ml/rba/campaign_correlation_eval.py).
 
 ## Mức trần: hạ tầng có được tái sử dụng qua nhiều nạn nhân không?

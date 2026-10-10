@@ -1,5 +1,7 @@
 # So với công cụ thương mại và baseline học thuật (MR19)
 
+> **Ghi chép theo thời điểm (MR19)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Hai câu hỏi khác nhau, trả lời riêng: (1) hệ thống này **thiếu gì** so với sản phẩm thương mại trưởng thành (Okta,
 Microsoft Entra ID Protection, Auth0) — đọc từ tài liệu công khai, không có quyền truy cập nội bộ, không đo được
 hiệu năng thật của họ; (2) hệ thống **đo lường được gì** so với baseline học thuật (Freeman et al. 2016) — số đo

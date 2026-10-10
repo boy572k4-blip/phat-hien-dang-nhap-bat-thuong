@@ -1,5 +1,7 @@
 # Đánh giá ML tầng 3 (nhiệm vụ 7.1) — điểm nhấn chính của đồ án
 
+> **Ghi chép theo thời điểm (Tuần 7–MR22)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 > **MR22:** bộ sinh dữ liệu đã cố định random seed và mốc thời gian — mọi con số dưới đây là của bộ dữ liệu sinh với seed
 > 42 (gồm cả 2 kiểu bất thường MR18 thêm: `dormant_reactivation`, `impossible_travel_geo`, xem
 > [`model-b-geo-time.md`](model-b-geo-time.md)) và **chạy lại ra đúng như vậy** (mục 6). Số của Tuần 7 (78,3% recall trên

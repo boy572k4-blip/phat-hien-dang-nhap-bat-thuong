@@ -1,5 +1,7 @@
 # Kiểm thử end-to-end toàn luồng (nhiệm vụ 6.2)
 
+> **Ghi chép theo thời điểm (Tuần 6)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Môi trường: backend + frontend + Postgres + Redis chạy đồng thời như môi
 trường demo thật (`docker compose up -d`, `uvicorn`, `npm run dev`), dashboard
 mở trong trình duyệt, đăng nhập admin thật, quan sát trực tiếp qua WebSocket

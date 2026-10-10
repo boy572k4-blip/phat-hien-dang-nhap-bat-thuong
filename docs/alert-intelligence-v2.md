@@ -1,5 +1,7 @@
 # Cảnh báo thông minh v2 (MR13)
 
+> **Ghi chép theo thời điểm (MR13)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 > **MR23** đổi chống trùng lặp thành mô hình **sự cố**: gộp theo tài khoản (hoặc IP nếu tên đăng nhập không tồn tại), không còn
 > theo họ tấn công, cửa sổ 15 phút **trượt** theo lần gần nhất; họ tấn công lấy theo luật đã ép hành động (nếu có) của lần thử
 > quyết định — xem [`incident-unification.md`](incident-unification.md). Số đo dưới đây là ảnh chụp của MR13.

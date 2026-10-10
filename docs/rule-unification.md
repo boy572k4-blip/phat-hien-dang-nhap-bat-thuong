@@ -1,5 +1,7 @@
 # Một bộ luật duy nhất (MR21)
 
+> **Ghi chép theo thời điểm (MR21)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Trước MR21, một lần đăng nhập đi qua **năm cơ chế chồng nhau**: tầng 1 (ba luật đếm Redis riêng của Tuần 3, mỗi lần khớp
 tạo một alert riêng), tầng 2 (bảng cộng điểm tay của Tuần 4, alert `high_risk_score`), tầng 3 (ML địa lý-thời gian,
 alert `ml_anomaly`), rule engine v2 (MR9, 19 luật) và hybrid risk engine (MR11, alert `hybrid_risk`). Hai trong số đó —

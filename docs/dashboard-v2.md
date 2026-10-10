@@ -1,5 +1,7 @@
 # Dashboard v2 (MR17)
 
+> **Ghi chép theo thời điểm (MR17)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Bốn mảng của checklist: hồ sơ rủi ro theo user, trang chiến dịch/hiệu năng rule-ML/sức khoẻ model, chỉnh ngưỡng +
 bật/tắt rule từ giao diện admin, bộ lọc mở rộng + kiểm thử responsive. Không phải một mô phỏng đo độ chính xác như
 MR13-16 — tài liệu này ghi lại 2 phát hiện kỹ thuật thật gặp khi xây, không phải số đo ML.

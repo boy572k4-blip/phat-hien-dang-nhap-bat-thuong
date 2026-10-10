@@ -1,5 +1,7 @@
 # Chốt mô hình ở CP2 (MR8b)
 
+> **Ghi chép theo thời điểm (MR8b/CP2)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Mã: [`selection.py`](../backend/ml/rba/selection.py) · kiểm thử: `tests/test_rba_selection.py` (12). Đây là phần **đổi mô hình** sau khi chủ dự án duyệt D1, D2 và D3 ở CP2 ([`checklist.md`](checklist.md)); MR8 chỉ giải thích mô hình, không đổi. Số liệu chạy trên bộ RBA **tổng hợp** ([`rba-data-card.md`](rba-data-card.md)), giai đoạn test, trọng số dân số, trừ khi ghi khác. Bản MR6 giữ nguyên dưới tên cũ (`hybrid`, `gbm_attacker_sim`, `isolation_forest`) để so trước/sau; bản chốt có hậu tố `_cp2`.
 
 ## Tóm tắt

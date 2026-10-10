@@ -1,5 +1,7 @@
 # Hybrid risk engine — hiệu chỉnh trên RBA (MR11)
 
+> **Ghi chép theo thời điểm (MR11)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 > Báo cáo TỰ SINH bởi `python -m ml.rba.hybrid_calibrate` — đừng sửa tay. Mã: [`hybrid_calibrate.py`](../backend/ml/rba/hybrid_calibrate.py), bộ gộp dùng lúc chấm điểm: [`app/detection/hybrid/combine.py`](../backend/app/detection/hybrid/combine.py). Hồ sơ: [`profiles/rba_calibrated.json`](../backend/app/detection/hybrid/profiles/rba_calibrated.json).
 
 > **MR25:** trọng số các luật RBA không đo được (hoặc ra 0% vì mẫu nhỏ) được đo lại trên bộ kịch bản có nhãn MR24 — bảng ở [`rule-recalibration.md`](rule-recalibration.md); trọng số ở mục 2 dưới đây là số đo trên RBA. Chạy lại script này GIỮ các trọng số `source = corpus_mr24*` trong hồ sơ.

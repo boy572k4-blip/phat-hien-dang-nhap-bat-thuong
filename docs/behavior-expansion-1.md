@@ -1,5 +1,7 @@
 # MR27 — Mở rộng hành vi, đợt 1
 
+> **Ghi chép theo thời điểm (MR27)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Mã: [`ml/corpus/behaviors.py`](../backend/ml/corpus/behaviors.py) (đánh giá "hành vi vững"), luật trong
 [`rules_auth.py`](../backend/app/detection/engine/rules_auth.py) / [`rules_automation.py`](../backend/app/detection/engine/rules_automation.py),
 cổng "cùng phiên" trong [`pipeline.py`](../backend/app/detection/pipeline.py), họ dữ liệu mới trong

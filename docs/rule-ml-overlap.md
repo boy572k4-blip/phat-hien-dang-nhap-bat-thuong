@@ -1,5 +1,7 @@
 # Chồng lấn giữa luật và mô hình (MR10)
 
+> **Ghi chép theo thời điểm (MR10)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 > Báo cáo TỰ SINH bởi `python -m ml.rba.rule_overlap` (sau `collect` và `tune` của [`rule_tuning.py`](../backend/ml/rba/rule_tuning.py)) — đừng sửa tay. Mã: [`rule_overlap.py`](../backend/ml/rba/rule_overlap.py).
 
 ## 1. Cách đọc

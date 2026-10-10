@@ -1,5 +1,7 @@
 # Thư viện tấn công mô phỏng v2 — scorecard (MR18)
 
+> **Ghi chép theo thời điểm (MR18)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 > **Ảnh chụp kết quả TRƯỚC MR21** (còn tầng 1 và tầng 2). Sau MR21 hai tầng đó đã gộp vào rule engine v2 — so sánh trước/sau trên đúng các kịch bản này: [`rule-unification.md`](rule-unification.md) mục 3. Chạy lại script để có kết quả hiện tại.
 >
 > **MR22:** tầng 3 không còn alert `ml_anomaly` (thành nguồn `ml_geo` của hybrid). Bộ chạy kịch bản từng dựng lịch sử nền thiếu bảng thiết bị/vị trí quen, nên caveat "`ml_anomaly` gần như luôn kêu" bên dưới một phần do chính bộ chạy — đã sửa; đo lại trước/sau: [`geo-model-integration.md`](geo-model-integration.md) mục 5–6.

@@ -1,5 +1,7 @@
 # Kiểm thử end-to-end toàn luồng — giai đoạn mở rộng AI (MR19)
 
+> **Ghi chép theo thời điểm (MR19)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 Bổ sung cho [`e2e-test-report.md`](e2e-test-report.md) (Tuần 6, chỉ phủ tầng 1). Môi trường giống hệt: backend +
 frontend + Postgres + Redis thật chạy đồng thời (`docker compose up -d`, `uvicorn`, `npm run dev`), đăng nhập admin
 thật qua trình duyệt (`mr19_e2e_admin`, tạo bằng `scripts.create_admin` — không dùng tài khoản admin có sẵn vì không

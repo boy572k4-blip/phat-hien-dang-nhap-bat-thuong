@@ -1,5 +1,7 @@
 # Phản ứng tự động — mô phỏng toàn bộ luồng (MR16)
 
+> **Ghi chép theo thời điểm (MR16)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 > **MR28:** lần thử bị từ chối vì đang khoá và lần sai mã OTP giờ được đếm cho hai luật `blocked_retry` (xác thực thêm khi khoá hết hạn) và
 > `otp_guessing` (khoá khi sai ≥ 10 mã/24 giờ) — xem [`behavior-expansion-2.md`](behavior-expansion-2.md). Số đo dưới đây là ảnh chụp của MR16.
 

@@ -1,5 +1,7 @@
 # Tinh chỉnh ngưỡng luật trên train RBA (MR10)
 
+> **Ghi chép theo thời điểm (MR10)** — mô tả và số đo lúc đó, giữ để truy vết; hệ thống đã thay đổi ở các MR sau (đến MR36). Bản hiện hành: [`architecture.md`](architecture.md) · mục lục tài liệu: [`README.md`](README.md).
+
 > Báo cáo TỰ SINH bởi `python -m ml.rba.rule_tuning tune` (sau `collect`) — đừng sửa tay. Mã: [`rule_tuning.py`](../backend/ml/rba/rule_tuning.py), [`rule_tuning_report.py`](../backend/ml/rba/rule_tuning_report.py). Hồ sơ cấu hình luật: [`profiles/rba_train_tuned.json`](../backend/app/detection/engine/profiles/rba_train_tuned.json).
 
 ## 1. Cách làm, quy trình sửa và những gì cần đọc kèm
