@@ -1,0 +1,85 @@
+{
+  "feature_names": [
+    "hour_sin",
+    "hour_cos",
+    "day_of_week",
+    "hour_deviation_from_avg",
+    "is_new_location",
+    "is_new_device",
+    "minutes_since_last_login",
+    "logins_last_24h",
+    "distance_km_from_home"
+  ],
+  "contamination": 0.1419457735247209,
+  "autoencoder_threshold": 0.7064600333606771,
+  "train_rows": 1254,
+  "test_rows": 561,
+  "train_anomaly_rows": 178,
+  "test_anomaly_rows": 126,
+  "feature_mean": [
+    -0.32913910461398616,
+    -0.3193192307924444,
+    3.0669856459330145,
+    1.7236634810579168,
+    0.07177033492822966,
+    0.08771929824561403,
+    2580.964726209463,
+    0.5566188197767146,
+    589.7676856506553
+  ],
+  "feature_std": [
+    0.6777895454062111,
+    0.5747208111753626,
+    1.9856689916226138,
+    2.4242030884245485,
+    0.2581072528088264,
+    0.28288623678240526,
+    2674.741213163542,
+    0.8123253407147577,
+    2834.3645150644497
+  ],
+  "cold_start_min_successes": 5,
+  "cold_start_fpr": [
+    {
+      "successes_before": "0",
+      "normal_logins": 38,
+      "flagged_share": 1.0
+    },
+    {
+      "successes_before": "1",
+      "normal_logins": 33,
+      "flagged_share": 0.2424
+    },
+    {
+      "successes_before": "2",
+      "normal_logins": 34,
+      "flagged_share": 0.0294
+    },
+    {
+      "successes_before": "3-4",
+      "normal_logins": 67,
+      "flagged_share": 0.0448
+    },
+    {
+      "successes_before": "5-9",
+      "normal_logins": 169,
+      "flagged_share": 0.0237
+    },
+    {
+      "successes_before": "10-19",
+      "normal_logins": 342,
+      "flagged_share": 0.0058
+    },
+    {
+      "successes_before": "20+",
+      "normal_logins": 828,
+      "flagged_share": 0.0085
+    }
+  ],
+  "geo_calibration": {
+    "method": "logistic slope on out-of-fold margins, anchored at the model's own decision threshold",
+    "slope": 48.223222060262955,
+    "fit_rows": 1054,
+    "fit_anomalies": 150
+  }
+}

@@ -22,7 +22,15 @@ backend/geoip/*.mmdb
 backend/logs/
 
 # Dữ liệu / model đã train (sinh lại được bằng script, không commit)
-backend/ml/artifacts/
+# Kết quả huấn luyện/đo (lớn, sinh lại được) — trừ 4 tệp mô hình hệ thống nạp khi chạy: thiếu chúng thì bản clone từ GitHub chạy ở
+# chế độ dự phòng chỉ luật (huấn luyện lại hybrid_cp2 cần bộ RBA ~9 GB)
+backend/ml/artifacts/*
+!backend/ml/artifacts/rba/
+backend/ml/artifacts/rba/*
+!backend/ml/artifacts/rba/hybrid_cp2.joblib
+!backend/ml/artifacts/isolation_forest.joblib
+!backend/ml/artifacts/scaler.joblib
+!backend/ml/artifacts/meta.json
 # Bộ dữ liệu RBA (mẫu Parquet sinh từ file zip ~9GB) và danh sách threat-intel tải về
 backend/ml/data/rba/
 backend/ml/data/lanl/
@@ -35,6 +43,7 @@ backend/threat_intel/
 .idea/
 .DS_Store
 Thumbs.db
+
 
 # Độ phủ test (MR34: pytest --cov)
 .coverage

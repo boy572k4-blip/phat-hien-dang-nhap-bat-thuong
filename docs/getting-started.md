@@ -96,9 +96,9 @@ python -m scripts.generate_labeled_anomalies --reset
 
 ## Bước 5b — (Tuỳ chọn) Chạy lại pipeline ML tầng 3
 
-Model đã train sẵn (`backend/ml/artifacts/`, không commit lên git — máy
-mới cần chạy lại 3 lệnh dưới trước khi tầng 3 hoạt động; nếu thiếu, hệ
-thống tự tắt tầng 3 một cách an toàn, không lỗi):
+Model đã train sẵn và có trong git (`backend/ml/artifacts/isolation_forest.joblib`, `scaler.joblib`, `meta.json` — từ
+10/10/2026). Chỉ chạy lại 3 lệnh dưới khi muốn huấn luyện lại; nếu thiếu tệp, hệ thống tự tắt mô hình này một cách an toàn,
+không lỗi:
 
 ```bash
 cd D:\github\phat-hien-dang-nhap-bat-thuong\backend
@@ -113,8 +113,9 @@ python -m ml.evaluate                     # (tuỳ chọn) xuất lại biểu �
 ## Bước 5c — (Tuỳ chọn) Nạp mô hình ML hybrid (`hybrid_cp2`, giai đoạn mở rộng AI)
 
 Từ MR12, `/login` chấm điểm rủi ro bằng mô hình `hybrid_cp2` (huấn luyện trên bộ dữ liệu học thuật RBA — xem
-[`docs/model-card-rba.md`](model-card-rba.md)) **nếu artifact đã có trên đĩa**. Máy đã setup sẵn thì không cần làm gì
-thêm. Trên máy mới (hoặc nếu log backend báo `chưa có artifact ... hybrid risk engine tạm tắt thành phần ML`):
+[`docs/model-card-rba.md`](model-card-rba.md)). Tệp mô hình `backend/ml/artifacts/rba/hybrid_cp2.joblib` có sẵn trong git (từ
+10/10/2026) nên clone về là chạy được. Chỉ cần huấn luyện lại khi đổi đặc trưng (log backend báo `chưa có artifact ...` hoặc chữ
+ký đặc trưng không khớp):
 
 ```bash
 cd D:\github\phat-hien-dang-nhap-bat-thuong\backend
