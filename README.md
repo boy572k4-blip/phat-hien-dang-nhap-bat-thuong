@@ -31,6 +31,15 @@ Quyết định kiến trúc & API contract (nhiệm vụ 1.1) nằm ở [`docs/
 - **Thành viên A — Backend & Detection**: schema DB, API backend, toàn bộ detection engine, bảo mật API/WebSocket.
 - **Thành viên B — Frontend, Dashboard & Kiểm thử**: web app mẫu, dashboard, real-time, script tấn công, đo precision/recall.
 
+## Chạy demo (một lệnh)
+
+```
+powershell -ExecutionPolicy Bypass -File demo\start.ps1
+```
+
+Bật Docker, dựng dữ liệu demo riêng, kiểm tra, mở backend + frontend và trình duyệt. Tài khoản, kịch bản demo, tấn công một lệnh và xử
+lý sự cố: [`docs/demo-guide.md`](docs/demo-guide.md).
+
 ## Chạy môi trường (Tuần 1)
 
 Yêu cầu: Docker Desktop, Python 3.11+, Node 20+.

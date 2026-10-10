@@ -50,7 +50,7 @@ export default function BlocklistPanel() {
   return (
     <section className="dashboard-panel blocklist-panel" aria-label="Khoá tạm / chặn">
       <h2>
-        Khoá tạm &amp; chặn (MR16)
+        Khoá tạm &amp; chặn
         <button type="button" className="blocklist-panel__refresh" onClick={() => setReloadKey((k) => k + 1)} title="Làm mới">
           🔄
         </button>

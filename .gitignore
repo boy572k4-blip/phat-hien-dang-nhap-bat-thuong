@@ -39,3 +39,7 @@ Thumbs.db
 # Độ phủ test (MR34: pytest --cov)
 .coverage
 htmlcov/
+
+# Demo (MR36): tiến trình đang chạy và khoá JWT riêng của máy demo
+demo/.pids
+demo/.jwt_secret

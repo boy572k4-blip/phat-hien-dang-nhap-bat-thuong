@@ -659,14 +659,24 @@ lệ khó không vượt mục tiêu báo nhầm. Mỗi hành vi cập nhật v�
     2 script, benchmark xoay vòng tài khoản (`--accounts`), soak 25 tài khoản + đo bộ nhớ
 - [ ] **MR35 [Lõi, M] Đồng bộ tài liệu với kiến trúc mới**: README, sơ đồ kiến trúc, api-contract, db-schema, getting-started,
   model card, ma trận phủ hành vi, hướng dẫn tái lập; tài liệu cũ đánh dấu "lịch sử"
-- [ ] **MR36 [Lõi, S] Demo chắc chắn**: khởi động một lệnh (docker compose cả backend + frontend, hoặc script), script reset dữ
-  liệu demo, tài khoản demo, chạy kịch bản tấn công một lệnh, quay video dự phòng
+- [x] **MR36 [Lõi, S] Demo chắc chắn** — hướng dẫn: [`demo-guide.md`](demo-guide.md)
+  - [x] Khởi động một lệnh `demo\start.ps1`: bật Docker Desktop nếu tắt (dời file socket cũ gây lỗi khởi động — sự cố 09/10), Postgres +
+    Redis, dựng DB demo nếu chưa có, kiểm tra 15 điều kiện (kể cả mô hình nạp được thật), backend + frontend thành 2 cửa sổ, mở trình
+    duyệt; `demo\stop.ps1` chỉ dừng đúng tiến trình đã ghi; khoá JWT riêng của máy demo (đăng nhập không mất khi khởi động lại)
+  - [x] Dữ liệu demo trên DB riêng `lad_demo` + Redis db 3 (từ chối mọi DB không kết thúc `_demo` — `lad_db` không bao giờ bị đụng);
+    `demoeset.ps1` dựng lại trong ~10 giây: 25 tài khoản, lịch sử 60 ngày kết thúc HÔM QUA, seed cố định (`backend/scripts/demo.py`)
+  - [x] Tài khoản demo cố định: `admin_demo` / `Admin@Demo2026`, `user001`–`user025` / `Demo@12345`
+  - [x] Tấn công một lệnh `attack-sim/demo_all.py`: 7 kịch bản (dò mật khẩu, dò tài khoản, trúng mật khẩu sau chuỗi sai, di chuyển bất
+    khả thi, Tor, script tự động, datacenter + thiết bị lạ), mỗi kịch bản một tài khoản + một IP giả riêng, có lời dẫn — chạy thật: 7/7
+    ra đúng cảnh báo; kịch bản demo 12 phút + xử lý sự cố trong hướng dẫn
+  - [x] Gỡ nhãn nội bộ "(MR..)" khỏi giao diện và lý do khoá tự động
+  - Bỏ quay video dự phòng (theo quyết định của chủ dự án 10/10/2026)
 - [ ] **CP6 — đóng băng code**: sau mốc này chỉ sửa lỗi chặn demo
 
 ## Giai đoạn L — Báo cáo và bảo vệ (tuần 6)
 
 - [ ] **MR37 [Lõi, L] Báo cáo đồ án** theo mẫu của trường; mọi hình và bảng lấy từ số đo thật
-- [ ] **MR38 [Lõi, M] Slide + kịch bản demo 10–15 phút** (kèm video dự phòng từ MR36)
+- [ ] **MR38 [Lõi, M] Slide + kịch bản demo 10–15 phút** (kịch bản demo có sẵn ở `demo-guide.md`, MR36)
 - [ ] **MR39 [Lõi, M] Ngân hàng câu hỏi hội đồng** (~60 câu: kiến trúc, ML, dữ liệu, đánh giá, bảo mật, hạn chế) + đáp án + 2
   buổi bảo vệ thử
 

@@ -273,7 +273,7 @@ def _respond(db: Session, *, event: LoginEvent, alert: Alert, risk: RiskResult, 
             # MR20: một lần thử ĐỒNG THỜI khác có thể vừa chèn đúng mục này — chèn trong SAVEPOINT, trùng thì dùng mục kia.
             try:
                 with db.begin_nested():
-                    block_entry = BlocklistEntry(kind=kind, value=value, reason=f"Tự động khoá (MR16) — {reasons}.", added_by="system", expires_at=new_expiry)
+                    block_entry = BlocklistEntry(kind=kind, value=value, reason=f"Tự động khoá — {reasons}.", added_by="system", expires_at=new_expiry)
                     db.add(block_entry)
             except IntegrityError:
                 block_entry = db.query(BlocklistEntry).filter(BlocklistEntry.kind == kind, BlocklistEntry.value == value).one()

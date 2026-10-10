@@ -145,7 +145,7 @@ export default function ModelHealthPage() {
             <h2>Khoảng cách dữ liệu huấn luyện RBA → hệ thống</h2>
             <p className="model-health-page__hint">
               Không phải "trôi": RBA là dữ liệu khác quốc gia, nhà mạng và quy mô (các đặc trưng độ hiếm tính theo số lượt của chính hệ thống), nên
-              khoảng cách này luôn lớn. Vì vậy điểm thô của mô hình được trừ một độ lệch miền trước khi đổi ra xác suất (MR26) — mô hình không train lại.
+              khoảng cách này luôn lớn. Vì vậy điểm thô của mô hình được trừ một độ lệch miền trước khi đổi ra xác suất — mô hình không train lại.
             </p>
             {shift && (
               <table className="model-health-table">
@@ -155,7 +155,7 @@ export default function ModelHealthPage() {
                     <td colSpan={2}>
                       {fmtNum(shift.success)}
                       {shift.ci95_success && ` (KTC 95% ${fmtNum(shift.ci95_success[0])}–${fmtNum(shift.ci95_success[1])})`} — đo trên{" "}
-                      {shift.source === "corpus_mr24" ? "bộ kịch bản có nhãn MR24" : shift.source ?? "—"}
+                      {shift.source === "corpus_mr24" ? "bộ kịch bản tấn công có nhãn" : shift.source ?? "—"}
                     </td>
                   </tr>
                   <tr>

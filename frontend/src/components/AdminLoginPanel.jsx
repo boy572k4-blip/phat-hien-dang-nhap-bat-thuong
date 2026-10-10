@@ -32,7 +32,7 @@ export default function AdminLoginPanel() {
   return (
     <section className="dashboard-panel blocklist-panel" aria-label="Đăng nhập quản trị gần đây">
       <h2>
-        Đăng nhập quản trị gần đây (MR32)
+        Đăng nhập quản trị gần đây
         <button type="button" className="blocklist-panel__refresh" onClick={() => setReloadKey((k) => k + 1)} title="Làm mới">
           🔄
         </button>
